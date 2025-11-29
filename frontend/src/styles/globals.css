@@ -1,0 +1,77 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-text font-sans;
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  /* Glassmorphism utility class */
+  .glass {
+    background: rgba(255, 255, 255, 0.65);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+  }
+
+  /* Card styles */
+  .card {
+    @apply rounded-xl bg-glass p-6 shadow-lg transition-all duration-300;
+  }
+
+  .card-2xl {
+    @apply rounded-2xl bg-glass p-8 shadow-lg transition-all duration-300;
+  }
+
+  .card:hover {
+    @apply shadow-xl transform scale-[1.02];
+  }
+
+  /* Button styles */
+  .btn-primary {
+    @apply bg-primary text-white px-6 py-3 rounded-xl font-medium transition-all duration-300 hover:bg-opacity-90 hover:shadow-lg;
+  }
+
+  .btn-secondary {
+    @apply bg-white text-primary px-6 py-3 rounded-xl font-medium border border-primary transition-all duration-300 hover:bg-primary hover:text-white;
+  }
+}
+
+@layer utilities {
+  /* Smooth transitions */
+  .transition-smooth {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+/* Subtle gradient blobs in background */
+body::before {
+  content: '';
+  position: fixed;
+  top: -50%;
+  right: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle at 20% 50%, rgba(99, 91, 255, 0.05) 0%, transparent 50%),
+              radial-gradient(circle at 80% 80%, rgba(99, 91, 255, 0.03) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  bottom: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle at 50% 20%, rgba(99, 91, 255, 0.04) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: -1;
+}
+

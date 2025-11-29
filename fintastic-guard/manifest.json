@@ -1,0 +1,31 @@
+{
+  "name": "Fintastic Guard",
+  "description": "Blocks or allows purchases based on user's financial health.",
+  "version": "1.0",
+  "manifest_version": 3,
+
+  "permissions": ["activeTab", "storage", "scripting"],
+
+  "host_permissions": [
+    "*://*.amazon.in/*",
+    "*://*.amazon.com/*",
+    "*://*.flipkart.com/*",
+    "*://localhost:*/*"
+  ],
+
+  "action": {
+    "default_popup": "popup.html"
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.amazon.in/*",
+        "*://*.amazon.com/*",
+        "*://*.flipkart.com/*"
+      ],
+      "js": ["content.js"]
+    }
+  ]
+}
+

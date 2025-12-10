@@ -598,6 +598,8 @@ export async function runFinancialCoachEngine({
         decision,
         transaction,
         stats,
+        goals: affectedGoals,
+        history,
       });
 
       console.log(
@@ -713,7 +715,7 @@ Current Stats:
 - Monthly Expense: ₹${stats.monthlyExpense || 0}
 - Savings Rate: ${stats.savingsRate || 0}%
 - Net Worth: ₹${stats.netWorth || 0}
-      `.trim();
+    `.trim();
 
       await sendToMemory({
         userId,

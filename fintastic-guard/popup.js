@@ -1,39 +1,34 @@
-const status = document.getElementById("status");
-const connectBtn = document.getElementById("connect");
+const status = document.getElementById('status');
+const connectBtn = document.getElementById('connect');
 
-// Check if already connected
-chrome.storage.local.get(["userId"], (data) => {
-  if (data.userId) {
-    status.textContent = "✅ Connected to Fintastic";
+// Check if JWT cookie exists
+chrome.cookies.get(
+  {
+    url: 'http://localhost:5174',
+    name: 'jwt',
+  },
+  (cookie) => {
+    if (cookie && cookie.value) {
+      status.textContent = '✅ Connected to Fintastic';
+    } else {
+      status.textContent = '❌ Not connected - please log in to Fintastic';
+    }
   }
-});
+);
 
 connectBtn.onclick = async () => {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-  if (!tab) {
-    status.textContent = "❌ No active tab";
-    return;
-  }
-
-  // Read userId from Fintastic website
-  chrome.scripting.executeScript(
+  // Check JWT cookie again
+  chrome.cookies.get(
     {
-      target: { tabId: tab.id },
-      func: () => document.body.dataset.userId || null,
+      url: 'http://localhost:5174',
+      name: 'jwt',
     },
-    (results) => {
-      const userId = results?.[0]?.result;
-
-      if (!userId) {
-        status.textContent = "❌ Open Fintastic Dashboard first";
-        return;
+    (cookie) => {
+      if (cookie && cookie.value) {
+        status.textContent = '✅ Connected successfully';
+      } else {
+        status.textContent = '❌ Please log in to Fintastic Dashboard first';
       }
-
-      chrome.storage.local.set({ userId }, () => {
-        status.textContent = "✅ Connected successfully";
-      });
     }
   );
 };
-

@@ -328,7 +328,7 @@ export const contributeToGoal = async (req, res) => {
       storedInsight = {
         title: alert.aiInsight.title,
         aiNoticing: alert.aiInsight.ai_noticing,
-        suggestions: {
+            suggestions: {
           positive: alert.aiInsight.positive,
           improvement: alert.aiInsight.improvement,
           action: alert.aiInsight.action

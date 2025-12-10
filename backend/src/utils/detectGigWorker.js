@@ -77,4 +77,3 @@ export async function detectGigWorker(userId, transactions = []) {
     return { isGigWorker: false, source: 'error', indicators: [] };
   }
 }
-

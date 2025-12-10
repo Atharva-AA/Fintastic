@@ -1,7 +1,9 @@
+import mongoose from 'mongoose';
 import Transaction from '../models/Transaction.js';
 import Goal from '../models/Goal.js';
 import BehaviorProfile from '../models/BehaviorProfile.js';
 import AiInsight from '../models/AiInsight.js';
+import User from '../models/User.js';
 
 import { parseTransaction } from '../utils/parseTransaction.utils.js';
 import { getUserStatsInternal } from '../utils/getUserStats.internal.js';
@@ -57,11 +59,50 @@ export const addTransaction = async (req, res) => {
 
     const { category, subtype, note } = parsed.data;
 
+    // BANK PDF duplicate check: Check by hash first (most reliable)
+    if (req.body.source === 'bank_pdf' && req.body.hash) {
+      const pdfDuplicateByHash = await Transaction.findOne({
+        userId,
+        hash: req.body.hash,
+        source: 'bank_pdf',
+      });
+
+      if (pdfDuplicateByHash) {
+        console.log('⛔ PDF Duplicate prevented (by hash):', text, amount);
+        return res.status(409).json({
+          message: 'Duplicate PDF transaction prevented',
+        });
+      }
+    }
+
+    // BANK PDF duplicate check: Same user, same amount, same text within last 7 days
+    if (req.body.source === 'bank_pdf') {
+      const pdfDuplicate = await Transaction.findOne({
+        userId,
+        amount: numericAmount,
+        note: note || text,
+        category: category,
+        createdAt: {
+          $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+        },
+        source: 'bank_pdf',
+      });
+
+      if (pdfDuplicate) {
+        console.log('⛔ PDF Duplicate prevented (by content):', text, amount);
+        return res.status(409).json({
+          message: 'Duplicate PDF transaction prevented',
+        });
+      }
+    }
+
+    // Regular duplicate check (for non-PDF transactions)
     const duplicate = await Transaction.findOne({
       userId,
       amount: numericAmount,
       note: note || text,
       createdAt: { $gte: new Date(Date.now() - 3000) },
+      source: { $ne: 'bank_pdf' }, // Exclude bank_pdf from this check
     });
 
     if (duplicate) {
@@ -103,14 +144,18 @@ export const addTransaction = async (req, res) => {
     /* ---------------------------
        2. SAVE IN DB
     ----------------------------*/
+    // Determine source - if from AI-service (bank PDF), use 'bank_pdf', otherwise 'manual'
+    const source = req.body.source === 'bank_pdf' ? 'bank_pdf' : 'manual';
+
     const saved = await Transaction.create({
       userId,
       type: finalType,
       category: category || 'Other',
       subtype: subtype || 'one-time',
       amount: numericAmount,
-      source: 'manual',
+      source: source,
       note: note || text,
+      hash: req.body.hash || undefined, // Store hash for PDF transactions
     });
 
     /* ---------------------------
@@ -271,5 +316,107 @@ export const addTransaction = async (req, res) => {
     return res
       .status(500)
       .json({ message: 'Server error', error: error.message });
+  }
+};
+
+/* ======================================================
+   ADD TRANSACTION FROM AI-SERVICE (Internal)
+   For PDF uploads - adds directly without pending
+====================================================== */
+
+export const addTransactionInternal = async (req, res) => {
+  try {
+    const { userId, type, text, amount } = req.body;
+
+    console.log('📥 [addTransactionInternal] Received request from AI-service');
+    console.log(
+      `   userId: ${userId}, type: ${type}, amount: ${amount}, text: ${text?.substring(
+        0,
+        50
+      )}`
+    );
+
+    if (!userId || !text || !amount) {
+      return res.status(400).json({
+        message: 'userId, text, and amount required',
+      });
+    }
+
+    const numericAmount = Number(amount);
+
+    if (isNaN(numericAmount) || numericAmount <= 0) {
+      return res.status(400).json({ message: 'Invalid amount' });
+    }
+
+    const allowed = ['income', 'expense', 'holding'];
+    if (!allowed.includes(type)) {
+      return res.status(400).json({ message: 'Invalid transaction type' });
+    }
+
+    // Convert userId to ObjectId
+    const userIdObj = new mongoose.Types.ObjectId(userId);
+
+    // Verify user exists
+    const user = await User.findById(userIdObj);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Create fake req/res to reuse addTransaction logic
+    const fakeReq = {
+      user: { _id: userIdObj },
+      body: {
+        type: type,
+        text: text.trim(),
+        amount: numericAmount,
+        source: 'bank_pdf', // Mark as bank PDF source
+        hash: req.body.hash || undefined, // Pass hash for duplicate detection
+      },
+    };
+
+    // Create response wrapper
+    let transactionResult = null;
+    let transactionError = null;
+
+    const fakeRes = {
+      status: (code) => ({
+        json: (data) => {
+          transactionResult = { code, data };
+          return { code, data };
+        },
+      }),
+    };
+
+    try {
+      await addTransaction(fakeReq, fakeRes);
+      console.log(
+        `✅ [addTransactionInternal] Bank PDF transaction added directly: ${text.substring(
+          0,
+          50
+        )} - ₹${amount}`
+      );
+      return res.json({
+        success: true,
+        message: 'Transaction added successfully',
+        transactionResult,
+      });
+    } catch (err) {
+      console.error(
+        '❌ [addTransactionInternal] Error in addTransaction():',
+        err
+      );
+      return res.status(500).json({
+        success: false,
+        message: 'Error creating transaction',
+        error: err.message,
+      });
+    }
+  } catch (err) {
+    console.error('❌ [addTransactionInternal] Server error:', err.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: err.message,
+    });
   }
 };

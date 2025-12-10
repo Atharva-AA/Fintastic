@@ -14,9 +14,9 @@ export default function Layout({ children }: LayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-pastel-beige flex">
+    <div className="min-h-screen bg-pastel-beige dark:bg-gray-900 flex transition-colors duration-200">
       <Sidebar />
-      
+
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col lg:ml-0">
         {/* Mobile Menu Button */}

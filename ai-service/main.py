@@ -2,13 +2,15 @@
 # IMPORTS
 # =========================
 
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from typing import Any, Optional, Dict, List
 import os
+import hashlib
+from datetime import datetime as dt_datetime
 from apscheduler.schedulers.background import BackgroundScheduler
-from datetime import datetime, timedelta
-from collections import Counter
+from datetime import datetime
 import requests
 import httpx
 
@@ -44,13 +46,16 @@ else:
     tempfile.tempdir = fallback_temp
     print(f"⚠️ Using fallback temp directory: {fallback_temp}")
 
+from services.market_data import get_market_data
+
 from node_client import (
   add_transaction_tool,
   update_transaction_tool,
   delete_transaction_tool,
   get_transactions_tool,
   get_user_stats_tool,
-  create_goal_tool
+  create_goal_tool,
+  fetch_recent_transactions
 )
 
 import chromadb
@@ -59,6 +64,12 @@ import json
 from transaction_service import create_transaction
 
 from groq import AsyncGroq
+
+# Gmail imports
+from connect_mail import authenticate_user_gmail, fetch_and_classify, debug_fetch
+
+# PDF Parser import
+from parser import parse_pdf
 
 # Import sentence_transformers AFTER temp directory fix
 from sentence_transformers import SentenceTransformer
@@ -79,6 +90,16 @@ app.add_middleware(
 
 
 # =========================
+# STARTUP LOGGING
+# =========================
+
+@app.on_event("startup")
+async def startup_event():
+    print("✅ AI-Service ready")
+    print("📬 Gmail reader loaded")
+    print("🚀 AI-Service Gmail running at http://localhost:8001")
+
+# =========================
 # HELPERS
 # =========================
 from tavily import TavilyClient
@@ -88,6 +109,7 @@ import requests
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 NODE_BACKEND_URL = os.getenv("NODE_BACKEND_URL", "http://localhost:3000")
 SERVICE_JWT = os.getenv("SERVICE_JWT")  # optional, if you use auth
+AI_SECRET = os.getenv("AI_INTERNAL_SECRET", "fintastic-ai-secret-2024")
 
 tavily_client = TavilyClient(api_key=TAVILY_API_KEY)
 
@@ -1097,6 +1119,37 @@ async def classify(data: Input):
 # --------------------------
 # AI FINANCIAL INSIGHTS
 # --------------------------
+# --------------------------
+# MARKET DATA
+# --------------------------
+class MarketDataRequest(BaseModel):
+    symbol: str
+
+@app.post("/market-data")
+async def get_market_data_endpoint(data: MarketDataRequest):
+    """Get market data for a stock symbol"""
+    try:
+        result = get_market_data(data.symbol)
+        return result
+    except Exception as e:
+        print(f"❌ Error in market data endpoint: {str(e)}")
+        return {
+            "symbol": data.symbol.upper(),
+            "price": 0,
+            "change": 0,
+            "changePercent": 0,
+            "chartData": [],
+            "info": {
+                "name": data.symbol,
+                "sector": None,
+                "marketCap": None,
+            },
+            "error": str(e)
+        }
+
+# --------------------------
+# AI FINANCIAL INSIGHTS
+# --------------------------
 @app.post("/ai/insights")
 async def generate_ai_insights(data: InsightRequest):
 
@@ -1107,10 +1160,21 @@ async def generate_ai_insights(data: InsightRequest):
         
     stats = data.stats or {}
     goals = data.goals or []
+    behavior_meta = build_behavior_context(data.behaviorProfile)
     page = (data.page or "coach").lower()
+    data_confidence = data.dataConfidence or "high"  # Default to high for new system
     
     # ============================================
-    # 1. EXTEND SUPPORTED METADATA - Behavior Flags
+    # 1. FETCH RECENT TRANSACTIONS IF NOT PROVIDED
+    # ============================================
+    recent_transactions = data.recentTransactions or []
+    if not recent_transactions or len(recent_transactions) == 0:
+        print(f"📊 [AI Insights] Fetching recent transactions for page: {page}")
+        recent_transactions = fetch_recent_transactions(user_id, page, limit=20)
+        print(f"📊 [AI Insights] Fetched {len(recent_transactions)} transactions")
+    
+    # ============================================
+    # 2. EXTEND SUPPORTED METADATA - Behavior Flags
     # ============================================
     alert_metadata = alert.get("metadata", {})
     behavior_flags = {
@@ -1123,8 +1187,25 @@ async def generate_ai_insights(data: InsightRequest):
         "positivityScore": alert_metadata.get("positivityScore", 0),
     }
     
+    # Get gig worker info from payload (from onboarding) OR detect from transactions
+    is_gig_worker = data.isGigWorker or False
+    gig_indicators = data.gigWorkerIndicators or []
+    
+    # Also check transactions for additional detection
+    gig_categories = ["freelance", "gig", "contractor", "self-employed", "consulting", "commission", "tips", "side hustle"]
+    
+    if recent_transactions and not is_gig_worker:
+        for t in recent_transactions:
+            if t.get("type") == "income":
+                category = (t.get("category") or "").lower()
+                note = (t.get("note") or "").lower()
+                if any(indicator in category or indicator in note for indicator in gig_categories):
+                    is_gig_worker = True
+                    if t.get("category") and t.get("category") not in gig_indicators:
+                        gig_indicators.append(t.get("category"))
+
     # ============================================
-    # 2. MEANINGFULNESS FILTER
+    # 3. MEANINGFULNESS FILTER
     # ============================================
     is_meaningful_alert = (
         alert.get("level") in ["CRITICAL", "HIGH", "POSITIVE"]
@@ -1145,367 +1226,206 @@ async def generate_ai_insights(data: InsightRequest):
             "level": alert.get("level"),
         }
 
-    # ============================================
-    # 3. FETCH LIVE DATA + CONTEXT
-    # ============================================
-    liveDataFetched = True
-    latest_data = {}
-    try:
-        latest_data = await get_latest_financial_data(user_id)
-        if not latest_data:
-            liveDataFetched = False
-    except Exception as fetch_err:
-        liveDataFetched = False
-        latest_data = {}
-        print(f"⚠️ [AI Insights] Live data fetch failed: {fetch_err}")
-
-    stats_source = latest_data.get("stats", {}) if isinstance(latest_data, dict) else {}
-    if stats_source:
-        stats = stats_source
-    else:
-        if not stats:
-            stats = {}
-        liveDataFetched = False
-
-    goals_source = latest_data.get("goals", []) if isinstance(latest_data, dict) else []
-    if goals_source:
-        goals = goals_source
-
-    raw_transactions = latest_data.get("recentTransactions", []) if isinstance(latest_data, dict) else []
-    if not raw_transactions:
-        liveDataFetched = False
-        raw_transactions = data.recentTransactions or []
-
-    previous_alerts_live = latest_data.get("activeAlerts", []) if isinstance(latest_data, dict) else []
-
-    def parse_timestamp(value):
-        if not value:
-            return None
-        if isinstance(value, (int, float)):
-            try:
-                ts = value / 1000 if value > 1e12 else value
-                return datetime.utcfromtimestamp(ts)
-            except Exception:
-                return None
-        if isinstance(value, str):
-            text = value.strip()
-            if not text:
-                return None
-            try:
-                if text.endswith("Z"):
-                    text = text.replace("Z", "+00:00")
-                return datetime.fromisoformat(text)
-            except ValueError:
-                try:
-                    return datetime.utcfromtimestamp(float(text))
-                except Exception:
-                    return None
-        return None
-
-    def get_transaction_date(tx):
-        if not isinstance(tx, dict):
-            return None
-        for key in ("occurredAt", "createdAt", "updatedAt", "date"):
-            dt = parse_timestamp(tx.get(key))
-            if dt:
-                return dt
-        return None
-
-    now = datetime.utcnow()
-    thirty_days_ago = now - timedelta(days=30)
-    seven_days_ago = now - timedelta(days=7)
-
-    tx_with_dates = []
-    for tx in raw_transactions:
-        tx_date = get_transaction_date(tx)
-        if tx_date and tx_date >= thirty_days_ago:
-            tx_with_dates.append((tx, tx_date))
-
-    tx_with_dates.sort(key=lambda item: item[1], reverse=True)
-    recent_transactions = [item[0] for item in tx_with_dates[:50]]
-    recent_transactions_with_dates = tx_with_dates[:50]
-
-    if not recent_transactions and raw_transactions:
-        tx_with_dates = []
-        for tx in raw_transactions[:50]:
-            tx_date = get_transaction_date(tx)
-            if tx_date:
-                tx_with_dates.append((tx, tx_date))
-        tx_with_dates.sort(key=lambda item: item[1], reverse=True)
-        recent_transactions = [item[0] for item in tx_with_dates[:50]]
-        recent_transactions_with_dates = tx_with_dates[:50]
-
-    transactionFrequency = sum(
-        1 for _, dt in recent_transactions_with_dates if dt >= seven_days_ago
-    )
-
-    if recent_transactions:
-        category_counter = Counter(
-            (tx.get("category") or "Other").strip() or "Other"
-            for tx in recent_transactions
-        )
-        mostCommonCategory = category_counter.most_common(1)[0][0]
-    else:
-        mostCommonCategory = "data_insufficient"
-
-    def as_number(value):
-        if isinstance(value, (int, float)):
-            return float(value)
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
-
-    monthly_income_value = as_number(stats.get("monthlyIncome"))
-    monthly_expense_value = as_number(stats.get("monthlyExpense"))
-    savings_rate_value = as_number(stats.get("savingsRate"))
-    investment_rate_value = as_number(stats.get("investmentRate"))
-    net_worth_value = as_number(stats.get("netWorth"))
-
-    incomeSpentPercent = (
-        round((monthly_expense_value / monthly_income_value) * 100)
-        if monthly_income_value and monthly_income_value > 0 and monthly_expense_value is not None
-        else None
-    )
-
-    def format_currency_value(value):
-        return f"{value:,.0f}" if isinstance(value, (int, float)) else "data_insufficient"
-
-    def format_percent_value(value):
-        return f"{value:.0f}%" if isinstance(value, (int, float)) else "data_insufficient"
-
-    monthly_income_display = format_currency_value(monthly_income_value)
-    monthly_expense_display = format_currency_value(monthly_expense_value)
-    net_worth_display = format_currency_value(net_worth_value)
-    saving_percent_display = format_percent_value(savings_rate_value)
-    investment_percent_display = format_percent_value(investment_rate_value)
-    income_spent_percent_display = format_percent_value(incomeSpentPercent)
-    transaction_frequency_display = (
-        str(transactionFrequency) if recent_transactions_with_dates else "data_insufficient"
-    )
-
-    def parse_alert_date(alert_doc):
-        if not isinstance(alert_doc, dict):
-            return datetime.min
-        for key in ("lastTriggeredAt", "updatedAt", "createdAt"):
-            dt = parse_timestamp(alert_doc.get(key))
-            if dt:
-                return dt
-        return datetime.min
-
-    sorted_alerts = sorted(
-        previous_alerts_live,
-        key=parse_alert_date,
-        reverse=True,
-    )
-    previous_alerts = sorted_alerts[:5]
-    last_alert = previous_alerts[0] if previous_alerts else None
-    lastAlertLevel = last_alert.get("level", "none") if last_alert else "none"
-    lastAlertScope = last_alert.get("scope", "none") if last_alert else "none"
-
     print(
         f"\n🧠 Generating INSIGHT for User: {user_id} | Alert: {alert.get('id')} | "
-        f"Level: {alert.get('level')} | Scope: {alert.get('scope')} | LiveDataFetched: {liveDataFetched}"
+        f"Level: {alert.get('level')} | Scope: {alert.get('scope')} | Page: {page} | "
+        f"Data Confidence: {data_confidence} | Gig Worker: {is_gig_worker}"
     )
+    print(f"🧬 Behavior Flags → {behavior_flags}")
+    print(f"📊 Recent Transactions: {len(recent_transactions)}")
 
-    alert_scope = alert.get("scope", "overall")
-    alert_context = json.dumps(alert, ensure_ascii=False)
+    # ============================================
+    # 4. GENERATE COMPREHENSIVE 5-REPORT SYSTEM PROMPT
+    # ============================================
+    
+    # Prepare goal metadata for prediction (goals page only)
+    goal_metadata = {}
+    if alert_metadata.get('needsPrediction'):
+        goal_metadata = {
+            'needsPrediction': True,
+            'goalId': alert_metadata.get('goalId'),
+            'goalName': alert_metadata.get('goalName'),
+            'targetAmount': alert_metadata.get('targetAmount'),
+            'currentAmount': alert_metadata.get('currentAmount', 0),
+            'deadline': alert_metadata.get('deadline'),
+            'priority': alert_metadata.get('priority')
+        }
+    
+    # Build comprehensive system prompt for 5-report generation
+    system_prompt = f"""You are the AI Insights Engine for FINtastic.
 
-    behavior_flag_map = {
-        "microLeak": "hidden small repeated spending",
-        "behaviorDrift": "your habits are shifting",
-        "spendingBurst": "many transactions in a short time",
-        "recovery": "correcting past risky behavior",
-        "improvementTrend": "discipline strengthening",
-        "goalImpact": "this directly affects your goal",
-    }
-    behavior_flag_hint = "none"
-    for key in [
-        "goalImpact",
-        "microLeak",
-        "behaviorDrift",
-        "spendingBurst",
-        "recovery",
-        "improvementTrend",
-    ]:
-        if alert_metadata.get("behavioralFlags", {}).get(key) or behavior_flags.get(key):
-            behavior_flag_hint = behavior_flag_map[key]
-            break
+Your responsibilities:
 
-    system_prompt = f"""
-You are Fintastic AI — a professional financial behavior and pattern analysis engine.
+1. Fully understand the alert, stats, recentTransactions, goals, behavior flags, gig indicators.
 
-STRICT NON-NEGOTIABLE RULES:
+2. Correctly classify the alert type.
 
-1. You are NOT the decision maker.
-2. The alert + scope are FINAL. Never change or reinterpret them.
-3. Never talk about topics outside the alert scope.
-4. Never invent numbers, trends, or behavior.
-5. If something is missing → say "data_insufficient".
-6. Your response will be printed on a specific page, so it MUST MATCH THAT PAGE.
+3. Produce 5 stable financial insights (Income, Expense, Investment, Savings, Goals).
 
-LIVE STATUS:
-- Live data fetched: {liveDataFetched}
+4. Always produce valid pure JSON (no text outside JSON).
 
-If liveDataFetched is false → treat confidence as LOW.
+5. Keep insights simple, actionable, Indian-finance friendly.
 
-----------------------------------
-ALERT DETAILS
-----------------------------------
-{alert_context}
+----------------------------------------------------------------
+ALERT CLASSIFICATION LOGIC (MUST MATCH BACKEND LOGIC)
+----------------------------------------------------------------
 
-----------------------------------
-REAL LIVE STATS
-----------------------------------
-Monthly Income: ₹{monthly_income_display}
-Monthly Expense: ₹{monthly_expense_display}
-Savings Rate: {saving_percent_display}
-Investment Rate: {investment_percent_display}
-Net Worth: ₹{net_worth_display}
+Return one of:
+- "income"
+- "expense"
+- "investment"
+- "savings"
+- "goals"
+- "general"
 
-% Spent from Income: {income_spent_percent_display}
+Rules:
+- category/scope contains salary, earning, payout → income
+- contains food, shopping, bill, travel, emi, spend → expense
+- contains sip, mutual fund, stock, equity, nifty, mf, trading, crypto → investment
+- contains savings, emergency fund, fd, rd → savings
+- contains goal, target, milestone → goals
+- else → general
 
-Top Category: {mostCommonCategory}
-Recent Transactions: {transaction_frequency_display} in last 7 days
+----------------------------------------------------------------
+OUTPUT FORMAT (STRICT)
+----------------------------------------------------------------
 
-----------------------------------
-PREVIOUS ALERT CONTEXT
-----------------------------------
-Last Alert Level: {lastAlertLevel}
-Last Alert Scope: {lastAlertScope}
-
-----------------------------------
-ALERT SCOPES YOU WILL RECEIVE:
-----------------------------------
-income | expense | saving | investment | goal | overall
-
-You MUST speak ONLY about the scope you receive.
-
-----------------------------------
-IF scope = "income"
-----------------------------------
-You MUST ONLY talk about:
-- income sources
-- income changes
-- % income spent
-- stability
-- irregularity
-- new streams
-- consistency
-
-You MUST use real % if exists.
-
-You MUST use phrases like:
-"New income pattern detected"
-"Shift in your income stream"
-"Your earning behavior shows..."
-"Currently you are spending {income_spent_percent_display} of your income"
-
-----------------------------------
-IF scope = "expense"
-----------------------------------
-You MUST ONLY talk about:
-- spending behavior
-- overspending
-- micro leaks
-- impulse
-- control
-- transaction frequency
-- categories
-
-Use phrases like:
-"Unusual spending detected"
-"Repeated small spending"
-"Overspending trend"
-"You spent {income_spent_percent_display} of your income"
-
-----------------------------------
-IF scope = "saving"
-----------------------------------
-ONLY talk about:
-- saving rate
-- saving consistency
-- discipline
-- gaps
-
-Use phrases like:
-"Your saving rate is {saving_percent_display}"
-"Saving momentum improving/slowing"
-
-----------------------------------
-IF scope = "investment"
-----------------------------------
-ONLY talk about:
-- investment actions
-- risk exposure
-- consistency
-- diversification
-
-Use:
-"Investment activity detected"
-"Your investment rate is {investment_percent_display}"
-
-----------------------------------
-IF scope = "goal"
-----------------------------------
-ONLY talk about the specific goal:
-- progress
-- delay
-- risk
-- acceleration
-
-----------------------------------
-IF scope = "overall"
-----------------------------------
-This is the ONLY time you can speak broader.
-
-----------------------------------
-BEHAVIORAL FLAGS TRANSLATION
-----------------------------------
-
-microLeak → hidden small repeated spending  
-behaviorDrift → your habits are shifting  
-spendingBurst → many transactions in a short time  
-recovery → correcting past risky behavior  
-improvementTrend → discipline strengthening  
-goalImpact → this directly affects your goal  
-
-Never mention the actual flag names.
-
-Behavioral Pattern Hint: {behavior_flag_hint}
-
-----------------------------------
-IMPORTANT UI FORMAT
-----------------------------------
-
-Your result will be displayed as:
-
-"AI {alert_scope} is noticing: <ai_noticing>"
-
-So ai_noticing MUST be SHORT, CLEAR and SCOPE-CORRECT.
-
-----------------------------------
-FINAL OUTPUT FORMAT (STRICT)
-----------------------------------
-
-Return ONLY valid JSON:
+Return EXACT JSON in this schema:
 
 {{
-  "title": "{alert.get('title')}",
-  "ai_noticing": "",
-  "positive": "",
-  "improvement": "",
-  "action": ""
+  "classifiedType": "...",
+  "updatedAt": "{dt_datetime.utcnow().isoformat()}Z",
+  "reports": {{
+      "income": {{
+          "title": "Income Insight",
+          "summary": "...",
+          "positive": "...",
+          "warning": "...",
+          "actionStep": "..."
+      }},
+      "expense": {{
+          "title": "Expense Insight",
+          "summary": "...",
+          "positive": "...",
+          "warning": "...",
+          "actionStep": "..."
+      }},
+      "investment": {{
+          "title": "Investment Insight",
+          "summary": "...",
+          "positive": "...",
+          "warning": "...",
+          "actionStep": "..."
+      }},
+      "savings": {{
+          "title": "Savings Insight",
+          "summary": "...",
+          "positive": "...",
+          "warning": "...",
+          "actionStep": "..."
+      }},
+      "goals": {{
+          "title": "Goals Insight",
+          "summary": "...",
+          "positive": "...",
+          "warning": "...",
+          "actionStep": "...",
+          "prediction": ""
+      }}
+  }}
 }}
 
-RULES:
-- Use ₹ for money
-- No emojis
+----------------------------------------------------------------
+INSIGHT RULES
+----------------------------------------------------------------
+
+SUMMARY:
+- Always 2–3 lines maximum.
+- Explain what the alert means TODAY.
+
+POSITIVE:
+- Income: consistency, stability, freelance boost
+- Expense: controlled spending, reduced category
+- Savings: emergency fund growth
+- Investment: SIP discipline, consistent contributions
+- Goals: progress, good pace
+
+WARNING:
+- Income: inconsistent cash flow, drop signs
+- Expense: category spike, discretionary overshoot
+- Savings: declining emergency fund
+- Investment: missed SIPs, risky allocation
+- Goals: likely delay, too slow contributions
+
+ACTION STEP:
+- 1 clear step: reduce category by 5–10%, add ₹300–₹500 to SIP/savings, cut one unnecessary expense.
+
+GOALS PREDICTION:
+- If goal exists → estimate likelihood of meeting deadline.
+- If no goal → keep empty string.
+
+----------------------------------------------------------------
+ALERT DETAILS
+----------------------------------------------------------------
+
+Alert ID: {alert.get('id', 'N/A')}
+Level: {alert.get('level', 'MEDIUM')}
+Scope: {alert.get('scope', 'overall')}
+Title: {alert.get('title', 'Financial Alert')}
+Reasons: {', '.join(alert.get('reasons', []))}
+
+Behavior Flags:
+- Behavior Drift: {behavior_flags['behaviorDrift']}
+- Micro Leak: {behavior_flags['microLeak']}
+- Spending Burst: {behavior_flags['spendingBurst']}
+- Improvement Trend: {behavior_flags['improvementTrend']}
+- Recovery: {behavior_flags['recovery']}
+- Risk Score: {behavior_flags['riskScore']}
+- Positivity Score: {behavior_flags['positivityScore']}
+
+----------------------------------------------------------------
+STATS SUMMARY
+----------------------------------------------------------------
+
+{json.dumps(stats, indent=2) if stats else 'No stats available'}
+
+----------------------------------------------------------------
+GOALS SUMMARY
+----------------------------------------------------------------
+
+{json.dumps([{'name': g.get('name'), 'targetAmount': g.get('targetAmount'), 'currentAmount': g.get('currentAmount'), 'deadline': g.get('deadline')} for g in goals[:5]], indent=2) if goals else 'No goals set'}
+
+----------------------------------------------------------------
+RECENT TRANSACTIONS (Last 20)
+----------------------------------------------------------------
+
+{json.dumps(recent_transactions[:20], indent=2) if recent_transactions else 'No recent transactions'}
+
+----------------------------------------------------------------
+GIG WORKER INDICATORS
+----------------------------------------------------------------
+
+Is Gig Worker: {is_gig_worker}
+Indicators: {', '.join(gig_indicators) if gig_indicators else 'None'}
+
+----------------------------------------------------------------
+GOAL METADATA (for prediction)
+----------------------------------------------------------------
+
+{json.dumps(goal_metadata, indent=2) if goal_metadata else 'No goal metadata'}
+
+----------------------------------------------------------------
+STRICT JSON RULE
+----------------------------------------------------------------
+
 - No markdown
-- No extra text
-- No bullet points
-- Must be short
-"""
+- No explanation
+- No sentences outside JSON
+- If info missing, produce helpful generic text
+- Never hallucinate numbers
+- Return ONLY the JSON object, nothing else"""
+
+    print(f"📝 [AI Insights] Generating comprehensive 5-report insights")
 
     try:
         result = await client.chat.completions.create(
@@ -1524,25 +1444,56 @@ RULES:
         print("\n🧾 RAW AI RESPONSE:\n", raw_response)
 
         try:
-            insight = json.loads(raw_response)
+            full_insights = json.loads(raw_response)
         except json.JSONDecodeError:
             first = raw_response.find("{")
             last = raw_response.rfind("}")
             if first != -1 and last != -1:
-                insight = json.loads(raw_response[first : last + 1])
+                full_insights = json.loads(raw_response[first : last + 1])
             else:
                 raise ValueError("No JSON object found in response")
 
-        for key in ["title", "ai_noticing", "positive", "improvement", "action"]:
-            if key not in insight:
-                raise ValueError(f"Missing key in insight: {key}")
+        # Validate structure
+        if "reports" not in full_insights:
+            raise ValueError("Missing 'reports' key in response")
+        
+        if "classifiedType" not in full_insights:
+            full_insights["classifiedType"] = page or "general"
+        
+        # Validate each report has required fields
+        required_report_keys = ["title", "summary", "positive", "warning", "actionStep"]
+        for report_type in ["income", "expense", "investment", "savings", "goals"]:
+            if report_type not in full_insights["reports"]:
+                # Create default report if missing
+                full_insights["reports"][report_type] = {
+                    "title": f"{report_type.capitalize()} Insight",
+                    "summary": "No specific insights available for this area.",
+                    "positive": "Continue monitoring your financial health.",
+                    "warning": "Keep tracking your transactions.",
+                    "actionStep": "Review your financial dashboard regularly."
+                }
+            else:
+                report = full_insights["reports"][report_type]
+                for key in required_report_keys:
+                    if key not in report:
+                        report[key] = ""
+        
+        # Ensure goals report has prediction field
+        if "goals" in full_insights["reports"]:
+            if "prediction" not in full_insights["reports"]["goals"]:
+                full_insights["reports"]["goals"]["prediction"] = ""
+        
+        # Set updatedAt if not present
+        if "updatedAt" not in full_insights:
+            full_insights["updatedAt"] = dt_datetime.utcnow().isoformat() + "Z"
 
         return {
             "success": True,
             "userId": user_id,
             "alertId": alert.get("id"),
             "page": page,
-            "insight": insight,
+            "fullInsights": full_insights,
+            "updatedAt": full_insights["updatedAt"]
         }
 
     except Exception as ai_error:
@@ -1559,12 +1510,48 @@ RULES:
                 alert_scope = alert.get("scope", "overall")
                 alert_title = alert.get("title", "Financial Alert")
                 
-                fallback_insight = {
-                    "title": alert_title,
-                    "ai_noticing": f"This {alert_level} alert in {alert_scope} requires attention. AI insights temporarily unavailable due to rate limits.",
-                    "positive": "Continue tracking your transactions for better insights.",
-                    "improvement": f"Review your {alert_scope} spending patterns and adjust as needed.",
-                    "action": "Check your dashboard for detailed financial data and recommendations."
+                # Create fallback 5-report structure
+                fallback_insights = {
+                    "classifiedType": alert_scope or "general",
+                    "updatedAt": dt_datetime.utcnow().isoformat() + "Z",
+                    "reports": {
+                        "income": {
+                            "title": "Income Insight",
+                            "summary": "AI insights temporarily unavailable due to rate limits.",
+                            "positive": "Continue tracking your income for better insights.",
+                            "warning": "Monitor your income patterns regularly.",
+                            "actionStep": "Review your income dashboard."
+                        },
+                        "expense": {
+                            "title": "Expense Insight",
+                            "summary": "AI insights temporarily unavailable due to rate limits.",
+                            "positive": "Continue tracking your expenses.",
+                            "warning": f"Review your {alert_scope} spending patterns.",
+                            "actionStep": "Check your expense dashboard."
+                        },
+                        "investment": {
+                            "title": "Investment Insight",
+                            "summary": "AI insights temporarily unavailable due to rate limits.",
+                            "positive": "Keep monitoring your investments.",
+                            "warning": "Review your investment portfolio regularly.",
+                            "actionStep": "Check your investment dashboard."
+                        },
+                        "savings": {
+                            "title": "Savings Insight",
+                            "summary": "AI insights temporarily unavailable due to rate limits.",
+                            "positive": "Continue building your savings.",
+                            "warning": "Monitor your savings rate.",
+                            "actionStep": "Review your savings goals."
+                        },
+                        "goals": {
+                            "title": "Goals Insight",
+                            "summary": "AI insights temporarily unavailable due to rate limits.",
+                            "positive": "Keep working towards your goals.",
+                            "warning": "Review your goal progress regularly.",
+                            "actionStep": "Check your goals dashboard.",
+                            "prediction": ""
+                        }
+                    }
                 }
                 
                 return {
@@ -1572,7 +1559,7 @@ RULES:
                     "userId": user_id,
                     "alertId": alert.get("id"),
                     "page": page,
-                    "insight": fallback_insight,
+                    "fullInsights": fallback_insights,
                     "fallback": True  # Flag to indicate this is a fallback response
                 }
             
@@ -3902,7 +3889,338 @@ Confidence: {confidence_score}%
         print(f"❌ Failed to send email to {to_email}: {e}")
 
 
+# =========================
+# GMAIL ROUTES
+# =========================
+
+@app.get("/gmail/connect/{userId}")
+async def gmail_connect(userId: str):
+    """Get OAuth URL for Gmail connection"""
+    try:
+        print(f"🔗 Gmail connect request for user: {userId}")
+        from connect_mail import get_oauth_url
+        
+        # Redirect URI - FastAPI callback endpoint (will then redirect to frontend)
+        redirect_uri = "http://localhost:8001/gmail/callback"
+        auth_url = get_oauth_url(userId, redirect_uri)
+        
+        if auth_url:
+            print(f"✅ Generated OAuth URL for user {userId}")
+            return {
+                "success": True,
+                "authUrl": auth_url,
+                "message": "OAuth URL generated successfully"
+            }
+        else:
+            return {"success": False, "message": "Failed to generate OAuth URL"}
+    except Exception as e:
+        print(f"❌ Gmail connect error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/gmail/callback")
+async def gmail_callback(userId: str = None, code: str = None, state: str = None, error: str = None):
+    """Handle OAuth callback"""
+    try:
+        if error:
+            print(f"❌ OAuth error: {error}")
+            return RedirectResponse(url=f"http://localhost:5174/dashboard?gmail_error={error}")
+        
+        if not code or not state:
+            return RedirectResponse(url="http://localhost:5174/dashboard?gmail_error=missing_params")
+        
+        # Extract userId from state (we stored it there)
+        # For now, we'll need to get it from the state file
+        # Better approach: encode userId in state
+        from connect_mail import handle_oauth_callback, GMAIL_CREDENTIALS_DIR
+        import os
+        
+        print(f"🔗 Gmail callback received, state: {state[:20] if state else 'None'}..., code: {code[:20] if code else 'None'}...")
+        
+        # Extract userId from state file before calling handle_oauth_callback
+        # (handle_oauth_callback removes the state file)
+        state_file = os.path.join(GMAIL_CREDENTIALS_DIR, f'oauth_state_{state}.txt')
+        extracted_user_id = None
+        if os.path.exists(state_file):
+            with open(state_file, 'r') as f:
+                extracted_user_id = f.read().strip()
+            print(f"📋 Extracted userId from state: {extracted_user_id}")
+        
+        # handle_oauth_callback will extract userId from state file and save token
+        success = handle_oauth_callback(code, state)
+        
+        if success and extracted_user_id:
+            # Create/update GmailToken record in backend
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.post(
+                        f"{NODE_BACKEND_URL}/gmail/connect-status",
+                        json={
+                            "userId": extracted_user_id,
+                            "email": None  # We don't have email from OAuth
+                        }
+                    )
+                    if response.status_code == 200:
+                        print(f"✅ GmailToken record created/updated for user: {extracted_user_id}")
+                    else:
+                        print(f"⚠️ Failed to create GmailToken record: {response.status_code} - {response.text}")
+            except Exception as e:
+                print(f"⚠️ Error creating GmailToken record (non-critical): {e}")
+            
+            print(f"✅ Gmail connected for user {extracted_user_id}")
+            return RedirectResponse(url="http://localhost:5174/dashboard?gmail_success=true")
+        else:
+            return RedirectResponse(url="http://localhost:5174/dashboard?gmail_error=callback_failed")
+    except Exception as e:
+        print(f"❌ Gmail callback error: {e}")
+        return RedirectResponse(url=f"http://localhost:5174/dashboard?gmail_error={str(e)}")
+
+
+@app.post("/gmail/fetch/{userId}")
+async def gmail_fetch(userId: str):
+    """Fetch and classify transactions from Gmail"""
+    try:
+        print(f"📥 Gmail fetch request for user: {userId}")
+        transactions = fetch_and_classify(userId)
+        
+        if not transactions:
+            print(f"ℹ️ No transactions found for user: {userId}")
+            return {"success": True, "count": 0, "message": "No transactions found"}
+        
+        # Send each transaction to Node backend
+        sent_count = 0
+        for transaction in transactions:
+            try:
+                # Validate transaction has all required fields
+                if not all(key in transaction for key in ['gmailMessageId', 'amount', 'text', 'type']):
+                    print(f"⚠️ Invalid transaction structure: {transaction}")
+                    continue
+                
+                payload = {
+                    "userId": userId,
+                    "gmailMessageId": transaction["gmailMessageId"],
+                    "amount": transaction["amount"],
+                    "text": transaction["text"],
+                    "type": transaction["type"]
+                }
+                
+                print(f"📤 Sending payload to backend: {payload}")
+                
+                response = httpx.post(
+                    f"{NODE_BACKEND_URL}/gmail/save-pending",
+                    json=payload,
+                    timeout=10.0
+                )
+                
+                if response.status_code == 200:
+                    sent_count += 1
+                    print(f"📩 Transaction found for user {userId}")
+                    print(f"🚀 Sent to backend: {transaction['text']} - ₹{transaction['amount']}")
+                else:
+                    print(f"⚠️ Backend returned status {response.status_code}: {response.text}")
+                    print(f"⚠️ Payload was: {payload}")
+            
+            except Exception as e:
+                print(f"⚠️ Error sending transaction to backend: {e}")
+                continue
+        
+        return {
+            "success": True,
+            "count": sent_count,
+            "total": len(transactions),
+            "message": f"Sent {sent_count} transactions to backend"
+        }
+    
+    except Exception as e:
+        print(f"❌ Gmail fetch error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/gmail/debug/{userId}")
+async def gmail_debug(userId: str):
+    """Debug: Print last 5 emails for a user"""
+    try:
+        print(f"🔍 Gmail debug request for user: {userId}")
+        debug_fetch(userId)
+        return {"success": True, "message": "Debug output printed to console"}
+    except Exception as e:
+        print(f"❌ Gmail debug error: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@app.post("/parse")
+async def parse_bank_pdf(userId: str = Form(...), file: UploadFile = File(...)):
+    """Parse bank PDF statement and add transactions directly (no pending)"""
+    print(f"📄 PDF upload for user: {userId}")
+    
+    try:
+        pdf_bytes = await file.read()
+        parsed = parse_pdf(pdf_bytes)
+        
+        print(f"📊 Parsed {len(parsed)} rows from PDF")
+        print(f"⏱️  Processing {len(parsed)} transactions (this may take time due to AI processing per transaction)...")
+        
+        added_count = 0
+        failed_count = 0
+        
+        # Use longer timeout for bulk processing (each transaction goes through AI classification + Financial Coach Engine)
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
+            for row in parsed:
+                payload = {
+                    "userId": userId,
+                    "type": row["type"],
+                    "text": row["text"],
+                    "amount": row["amount"],
+                    "source": "bank_pdf",
+                    "hash": row.get("hash")  # Include hash for duplicate detection
+                }
+                
+                print(f"➡️ Adding direct transaction: {row['text'][:50]} - ₹{row['amount']}")
+                
+                try:
+                    response = await client.post(
+                        f"{NODE_BACKEND_URL}/api/transactions/add-internal",
+                        json=payload,
+                        headers={"x-ai-secret": AI_SECRET},
+                        timeout=60.0  # Increased timeout for heavy processing (AI classification, Financial Coach Engine, etc.)
+                    )
+                    
+                    if response.status_code == 200:
+                        added_count += 1
+                        print(f"✅ Transaction added: {row['text'][:50]}")
+                    else:
+                        print(f"⚠️ Backend returned {response.status_code} for row: {row['text'][:50]}")
+                        print(f"⚠️ Response: {response.text}")
+                        
+                except httpx.ReadTimeout:
+                    failed_count += 1
+                    print(f"⏱️  Timeout adding transaction: {row['text'][:50]} (backend processing took >60s)")
+                    print(f"   This is normal for bulk uploads - transaction may still be processing in background")
+                except Exception as e:
+                    failed_count += 1
+                    error_msg = str(e)
+                    if "ReadTimeout" in error_msg or "timeout" in error_msg.lower():
+                        print(f"⏱️  Timeout adding transaction: {row['text'][:50]}")
+                        print(f"   Backend processing is taking longer than expected")
+                    else:
+                        print(f"❌ Error adding transaction: {error_msg}")
+                        import traceback
+                        print(f"❌ Traceback: {traceback.format_exc()}")
+        
+        print(f"🧾 PDF Processing Complete:")
+        print(f"   ✅ Successfully added: {added_count}")
+        print(f"   ⚠️  Failed/timeout: {failed_count}")
+        print(f"   📊 Total parsed: {len(parsed)}")
+        
+        return {
+            "success": True, 
+            "parsed": len(parsed), 
+            "added": added_count,
+            "failed": failed_count
+        }
+        
+    except Exception as e:
+        print(f"❌ PDF parse error: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e), "parsed": 0, "added": 0}
+
+
+# =========================
+# GMAIL CRON JOB
+# =========================
+
+def run_gmail_cron():
+    """Cron job to fetch Gmail transactions for all users"""
+    print("⏰ Running Gmail Cron")
+    
+    gmail_credentials_dir = os.path.join(os.path.dirname(__file__), 'gmail_credentials')
+    
+    if not os.path.exists(gmail_credentials_dir):
+        print("⚠️ Gmail credentials directory not found")
+        return
+    
+    # Find all token files
+    token_files = [
+        f for f in os.listdir(gmail_credentials_dir)
+        if f.startswith('token_') and f.endswith('.json')
+    ]
+    
+    if not token_files:
+        print("ℹ️ No Gmail tokens found")
+        return
+    
+    print(f"👤 Found {len(token_files)} Gmail token(s)")
+    
+    for token_file in token_files:
+        try:
+            # Extract userId from filename: token_<userId>.json
+            userId = token_file.replace('token_', '').replace('.json', '')
+            
+            if not userId:
+                continue
+            
+            print(f"👤 Processing Gmail for user {userId}")
+            
+            # Fetch and classify
+            transactions = fetch_and_classify(userId)
+            
+            if not transactions:
+                continue
+            
+            # Send to backend
+            for transaction in transactions:
+                try:
+                    # Validate transaction has all required fields
+                    if not all(key in transaction for key in ['gmailMessageId', 'amount', 'text', 'type']):
+                        print(f"⚠️ Invalid transaction structure for user {userId}: {transaction}")
+                        continue
+                    
+                    payload = {
+                        "userId": userId,
+                        "gmailMessageId": transaction["gmailMessageId"],
+                        "amount": transaction["amount"],
+                        "text": transaction["text"],
+                        "type": transaction["type"]
+                    }
+                    
+                    print(f"📤 [Cron] Sending payload to backend: {payload}")
+                    
+                    response = httpx.post(
+                        f"{NODE_BACKEND_URL}/gmail/save-pending",
+                        json=payload,
+                        timeout=10.0
+                    )
+                    
+                    if response.status_code == 200:
+                        print(f"🚀 Sent transaction to backend for user {userId}")
+                    else:
+                        print(f"⚠️ Backend error for user {userId}: {response.status_code}")
+                        print(f"⚠️ Response: {response.text}")
+                        print(f"⚠️ Payload was: {payload}")
+                
+                except Exception as e:
+                    print(f"⚠️ Error sending transaction for user {userId}: {e}")
+                    continue
+        
+        except Exception as e:
+            print(f"⚠️ Error processing token file {token_file}: {e}")
+            continue
+    
+    print("✅ Gmail cron completed")
+
+
 scheduler = BackgroundScheduler()
+
+# Gmail cron job - runs every 10 minutes
+scheduler.add_job(
+    run_gmail_cron,
+    trigger="interval",
+    minutes=10,
+    id="gmail_cron",
+    replace_existing=True
+)
 
 # run at 9 PM everyday
 # scheduler.add_job(
@@ -3913,3 +4231,4 @@ scheduler = BackgroundScheduler()
 
 scheduler.start()
 print("✅ Daily Mentor Scheduler started (9 PM)")
+print("⏰ Gmail Cron (10m) active")

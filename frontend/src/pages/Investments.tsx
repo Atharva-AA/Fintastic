@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
+import { getSavingsInsight } from '../services/aiInsightsService';
+import { getDashboardData } from '../services/dashboardService';
+import InsightCard from '../components/InsightCard';
 
 /**
  * Investments Page - AI-Powered Wealth Planning
@@ -8,6 +11,39 @@ import Layout from '../components/Layout';
  */
 export default function Investments() {
   const [showAddInvestment, setShowAddInvestment] = useState(false);
+
+  // AI Insights state (mix of investment and savings)
+  const [savingsReport, setSavingsReport] = useState<any>(null);
+  const [investmentReport, setInvestmentReport] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchSavingsInsight = async () => {
+      try {
+        let userId = document.body.dataset.userId;
+        if (!userId) {
+          const dashboardData = await getDashboardData().catch(() => null);
+          userId = dashboardData?.userId;
+          if (!userId) {
+            setSavingsReport(null);
+            setInvestmentReport(null);
+            return;
+          }
+        }
+        const response = await getSavingsInsight(userId);
+        if (response.success) {
+          setSavingsReport(response.savings || null);
+          setInvestmentReport(response.investment || null);
+        } else {
+          setSavingsReport(null);
+          setInvestmentReport(null);
+        }
+      } catch (err) {
+        setSavingsReport(null);
+        setInvestmentReport(null);
+      }
+    };
+    fetchSavingsInsight();
+  }, []);
 
   // Current Investment Portfolio
   const investments = [
@@ -50,7 +86,11 @@ export default function Investments() {
     {
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+          <path
+            fillRule="evenodd"
+            d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+            clipRule="evenodd"
+          />
         </svg>
       ),
       text: 'You are currently more growth-focused than 63% of similar users',
@@ -58,7 +98,11 @@ export default function Investments() {
     {
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+          <path
+            fillRule="evenodd"
+            d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+            clipRule="evenodd"
+          />
         </svg>
       ),
       text: 'If markets decline by 10%, your expected impact is low–moderate',
@@ -66,7 +110,11 @@ export default function Investments() {
     {
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+          <path
+            fillRule="evenodd"
+            d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+            clipRule="evenodd"
+          />
         </svg>
       ),
       text: 'You have a healthy mix of liquidity and growth',
@@ -74,45 +122,20 @@ export default function Investments() {
     {
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
+          <path
+            fillRule="evenodd"
+            d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"
+            clipRule="evenodd"
+          />
         </svg>
       ),
       text: 'Increasing SIP by ₹500/month could significantly boost your 3-year outcome',
     },
   ];
 
-  // Smart Strategy Tips
-  const strategyTips = [
-    {
-      icon: (
-        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-        </svg>
-      ),
-      text: 'Keep 50–60% in safe / balanced instruments until emergency fund is complete',
-    },
-    {
-      icon: (
-        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
-          <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
-        </svg>
-      ),
-      text: 'You are in the best phase to start compounding (age + flexibility advantage)',
-    },
-    {
-      icon: (
-        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-        </svg>
-      ),
-      text: 'Avoid locking long-term investments until income stabilizes further',
-    },
-  ];
-
   return (
     <Layout>
-      <div className="min-h-screen bg-pastel-beige">
+      <div className="min-h-screen bg-pastel-beige dark:bg-gray-900">
         {/* Main Content */}
         <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-4 md:space-y-6">
           {/* Header */}
@@ -147,7 +170,9 @@ export default function Investments() {
             </div>
 
             <div className="bg-white/80 rounded-3xl p-6 shadow-soft border border-pastel-tan/20">
-              <p className="text-sm text-text/50 mb-2">Recommended Monthly Range</p>
+              <p className="text-sm text-text/50 mb-2">
+                Recommended Monthly Range
+              </p>
               <p className="text-3xl font-semibold text-text mb-1">
                 ₹2,500 – ₹4,000
               </p>
@@ -157,8 +182,10 @@ export default function Investments() {
 
           {/* Current Investment Portfolio */}
           <div className="bg-white/80 rounded-3xl p-6 shadow-soft border border-pastel-tan/20">
-            <h2 className="text-xl font-semibold text-text mb-6">Current Portfolio</h2>
-            
+            <h2 className="text-xl font-semibold text-text mb-6">
+              Current Portfolio
+            </h2>
+
             <div className="space-y-4">
               {investments.map((investment, index) => (
                 <div
@@ -178,7 +205,9 @@ export default function Investments() {
                           {investment.status}
                         </span>
                       </div>
-                      <p className="text-sm text-text/60">Invested: {investment.invested}</p>
+                      <p className="text-sm text-text/60">
+                        Invested: {investment.invested}
+                      </p>
                     </div>
                     <div className="flex gap-2">
                       <button className="px-3 py-1.5 text-xs rounded-lg border border-pastel-tan/30 text-text hover:bg-pastel-orange/20 transition-colors">
@@ -194,15 +223,21 @@ export default function Investments() {
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pt-4 border-t border-pastel-tan/20">
                     <div>
                       <p className="text-xs text-text/50 mb-1">Type</p>
-                      <p className="text-sm text-text font-medium">{investment.type}</p>
+                      <p className="text-sm text-text font-medium">
+                        {investment.type}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-text/50 mb-1">Liquidity</p>
-                      <p className="text-sm text-text font-medium">{investment.liquidity}</p>
+                      <p className="text-sm text-text font-medium">
+                        {investment.liquidity}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-text/50 mb-1">Status</p>
-                      <p className="text-sm text-text font-medium">{investment.status}</p>
+                      <p className="text-sm text-text font-medium">
+                        {investment.status}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -210,25 +245,33 @@ export default function Investments() {
             </div>
           </div>
 
-          {/* AI Portfolio Insights - Hero Intelligence Section */}
-          <div className="bg-white/80 rounded-3xl p-6 shadow-soft border border-pastel-tan/20">
-            <h2 className="text-xl font-semibold text-text mb-4">
-              Fintastic AI Analysis
-            </h2>
-            <div className="space-y-3">
-              {aiInsights.map((insight, index) => (
-                <div
-                  key={index}
-                  className="bg-pastel-beige/50 rounded-2xl p-4 border border-pastel-tan/20 flex items-start gap-3"
-                >
-                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-pastel-green/40 flex items-center justify-center mt-0.5 text-text">
-                    {insight.icon}
+          {/* AI Portfolio Insights - Hero Intelligence Section (Investment + Savings Mix) */}
+          {(investmentReport || savingsReport) && (
+            <div>
+              <h2 className="text-xl font-semibold text-text mb-4">
+                AI Insights (Investment / Saving)
+              </h2>
+              <div className="space-y-6">
+                {investmentReport && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-text/70 mb-3">
+                      Investment Analysis
+                    </h3>
+                    <InsightCard report={investmentReport} />
                   </div>
-                  <p className="text-sm text-text flex-1">{insight.text}</p>
-                </div>
-              ))}
+                )}
+
+                {savingsReport && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-text/70 mb-3">
+                      Savings Analysis
+                    </h3>
+                    <InsightCard report={savingsReport} />
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Add New Investment */}
           <div className="bg-white/80 rounded-3xl p-6 shadow-soft border border-pastel-tan/20">
@@ -344,26 +387,6 @@ export default function Investments() {
                 </div>
               </div>
             )}
-          </div>
-
-          {/* Smart Strategy For You */}
-          <div className="bg-white/80 rounded-3xl p-6 shadow-soft border border-pastel-tan/20">
-            <h2 className="text-xl font-semibold text-text mb-4">
-              Smart Strategy For You
-            </h2>
-            <div className="space-y-3">
-              {strategyTips.map((tip, index) => (
-                <div
-                  key={index}
-                  className="bg-pastel-beige/50 rounded-2xl p-4 border border-pastel-tan/20 flex items-start gap-3"
-                >
-                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-pastel-blue/40 flex items-center justify-center mt-0.5 text-text">
-                    {tip.icon}
-                  </div>
-                  <p className="text-sm text-text flex-1">{tip.text}</p>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       </div>

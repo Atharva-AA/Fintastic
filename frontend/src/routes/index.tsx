@@ -11,6 +11,7 @@ import Investments from '../pages/Investments';
 import Timeline from '../pages/Timeline';
 import Profile from '../pages/Profile';
 import AI from '../pages/AI';
+import FinanceTutor from '../pages/finance-tutor';
 import ErrorFallback from '../pages/ErrorFallback';
 
 /**
@@ -78,5 +79,9 @@ export const router = createBrowserRouter([
     element: <AI />,
     errorElement: <ErrorFallback />,
   },
+  {
+    path: '/finance-tutor',
+    element: <FinanceTutor />,
+    errorElement: <ErrorFallback />,
+  },
 ]);
-

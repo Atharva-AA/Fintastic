@@ -6,3 +6,13 @@ sentence-transformers
 groq
 dotenv
 python-dotenv
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+httpx
+apscheduler
+pdfminer.six
+pdfplumber
+yfinance
+tavily

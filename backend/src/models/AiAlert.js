@@ -1,10 +1,10 @@
-import mongoose from "mongoose";
+import mongoose from 'mongoose';
 
 const aiAlertSchema = new mongoose.Schema(
   {
     userId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
       index: true,
       required: true,
     },
@@ -12,7 +12,7 @@ const aiAlertSchema = new mongoose.Schema(
     // What area this alert belongs to
     scope: {
       type: String,
-      enum: ["expense", "income", "goal", "investment", "saving", "overall"],
+      enum: ['expense', 'income', 'goal', 'investment', 'saving', 'overall'],
       required: true,
       index: true,
     },
@@ -27,14 +27,14 @@ const aiAlertSchema = new mongoose.Schema(
 
     level: {
       type: String,
-      enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL", "POSITIVE"],
+      enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL', 'POSITIVE'],
       required: true,
     },
 
     status: {
       type: String,
-      enum: ["active", "resolved"],
-      default: "active",
+      enum: ['active', 'resolved'],
+      default: 'active',
       index: true,
     },
 
@@ -45,7 +45,7 @@ const aiAlertSchema = new mongoose.Schema(
     // For linking to last triggering transaction
     lastTransactionId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Transaction",
+      ref: 'Transaction',
     },
 
     lastTriggeredAt: {
@@ -58,7 +58,7 @@ const aiAlertSchema = new mongoose.Schema(
 
     // UI content
     title: String, // short message for card
-    page: String,  // "expense" | "income" | "goals" | "investment" | "dashboard"
+    page: String, // "expense" | "income" | "goals" | "investment" | "dashboard"
 
     // ✨ AI-generated insight for dashboard display
     aiInsight: {
@@ -67,7 +67,100 @@ const aiAlertSchema = new mongoose.Schema(
       positive: { type: String },
       improvement: { type: String },
       action: { type: String },
-      generatedAt: { type: Date, default: Date.now }
+      generatedAt: { type: Date, default: Date.now },
+    },
+
+    // ✨ Page-specific AI reports (legacy)
+    pageReports: {
+      type: {
+        dashboard: {
+          updatedAt: { type: Date },
+          title: { type: String },
+          positives: { type: String },
+          negatives: { type: String },
+          action: { type: String },
+        },
+        income: {
+          updatedAt: { type: Date },
+          title: { type: String },
+          positives: { type: String },
+          negatives: { type: String },
+          action: { type: String },
+        },
+        expense: {
+          updatedAt: { type: Date },
+          title: { type: String },
+          positives: { type: String },
+          negatives: { type: String },
+          action: { type: String },
+        },
+        savings: {
+          updatedAt: { type: Date },
+          title: { type: String },
+          positives: { type: String },
+          negatives: { type: String },
+          action: { type: String },
+        },
+        investment: {
+          updatedAt: { type: Date },
+          title: { type: String },
+          positives: { type: String },
+          negatives: { type: String },
+          action: { type: String },
+        },
+        goals: {
+          updatedAt: { type: Date },
+          title: { type: String },
+          positives: { type: String },
+          negatives: { type: String },
+          action: { type: String },
+        },
+      },
+      default: {},
+    },
+
+    // ✨ New unified 5-report AI insight
+    fullInsights: {
+      classifiedType: { type: String },
+      updatedAt: { type: Date },
+      reports: {
+        income: {
+          title: { type: String },
+          summary: { type: String },
+          positive: { type: String },
+          warning: { type: String },
+          actionStep: { type: String },
+        },
+        expense: {
+          title: { type: String },
+          summary: { type: String },
+          positive: { type: String },
+          warning: { type: String },
+          actionStep: { type: String },
+        },
+        investment: {
+          title: { type: String },
+          summary: { type: String },
+          positive: { type: String },
+          warning: { type: String },
+          actionStep: { type: String },
+        },
+        savings: {
+          title: { type: String },
+          summary: { type: String },
+          positive: { type: String },
+          warning: { type: String },
+          actionStep: { type: String },
+        },
+        goals: {
+          title: { type: String },
+          summary: { type: String },
+          positive: { type: String },
+          warning: { type: String },
+          actionStep: { type: String },
+          prediction: { type: String },
+        },
+      },
     },
 
     // Freely extensible
@@ -94,4 +187,4 @@ const aiAlertSchema = new mongoose.Schema(
 // You will query: "active alerts per user per area"
 aiAlertSchema.index({ userId: 1, scope: 1, areaKey: 1, status: 1 });
 
-export default mongoose.model("AiAlert", aiAlertSchema);
+export default mongoose.model('AiAlert', aiAlertSchema);

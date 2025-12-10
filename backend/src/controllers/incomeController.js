@@ -110,30 +110,15 @@ export const getIncomeIntelligence = async (req, res) => {
     const incomeStability = determineStability(Object.values(monthTotals));
 
     // Fetch income-related alerts
-    const incomeAlertsRaw = await AiAlert.find({
+    const incomeAlerts = await AiAlert.find({
       userId,
       status: 'active',
-      $or: [
-        { scope: 'income' },
-        { 'meta.lastScope': 'income' },
-        { 'meta.lastType': 'income' },
-        { 'meta.lastCategory': 'income' },
-      ],
+      $or: [{ scope: 'income' }, { 'meta.lastCategory': 'income' }],
       level: { $in: ['CRITICAL', 'HIGH', 'POSITIVE'] },
     })
       .sort({ lastTriggeredAt: -1 })
       .limit(5)
       .lean();
-
-    const incomeAlerts = incomeAlertsRaw.filter((alert) => {
-      const meta = alert.meta || {};
-      return (
-        alert.scope === 'income' ||
-        meta.lastScope === 'income' ||
-        meta.lastType === 'income' ||
-        meta.lastCategory === 'income'
-      );
-    });
 
     console.log(
       `💰 [Income Intelligence] Found ${incomeAlerts.length} income-related alerts`
@@ -141,58 +126,35 @@ export const getIncomeIntelligence = async (req, res) => {
 
     const aiIncomeInsights = [];
 
-    const formatAlertInsight = (alert) => {
-      const insight = alert.aiInsight || {};
-      const reasons = insight?.reasonSummary || alert.meta?.lastReasons || [];
-
-      return {
-        type: 'alert',
-        level: alert.level,
-        scope: alert.scope || 'income',
-        title: insight.title || alert.title || 'Income insight',
-        ai_noticing:
-          insight.ai_noticing ||
-          reasons.join('. ') ||
-          'Income activity detected',
-        positive: insight.positive || null,
-        improvement: insight.improvement || null,
-        action: insight.action || null,
-        reasonSummary: reasons,
-        source: alert.meta?.lastCategory || alert.scope || 'income',
-        createdAt:
-          alert.lastTriggeredAt || alert.updatedAt || alert.createdAt || null,
-      };
-    };
-
     // Add income alerts first (most important)
     incomeAlerts.forEach((alert) => {
-      aiIncomeInsights.push(formatAlertInsight(alert));
+      if (alert.aiInsight?.ai_noticing) {
+        // Use AI-generated insight
+        aiIncomeInsights.push(alert.aiInsight.ai_noticing);
+      } else if (alert.meta?.lastReasons?.length) {
+        // Fallback: Use alert reasons
+        aiIncomeInsights.push(alert.meta.lastReasons.join('. '));
+      } else if (alert.title) {
+        // Last fallback: Use alert title
+        aiIncomeInsights.push(alert.title);
+      }
     });
 
     // Add general income insights
     if (monthlyIncome > 0) {
-      aiIncomeInsights.push({
-        type: 'summary',
-        title: 'Monthly income recorded',
-        ai_noticing: `You've recorded ${formatCurrency(
-          monthlyIncome
-        )} this month.`,
-      });
+      aiIncomeInsights.push(
+        `You've recorded ${formatCurrency(monthlyIncome)} this month.`
+      );
     } else {
-      aiIncomeInsights.push({
-        type: 'summary',
-        title: 'No income recorded',
-        ai_noticing:
-          'No income recorded this month — add entries to unlock AI coaching.',
-      });
+      aiIncomeInsights.push(
+        'No income recorded this month — add entries to unlock AI coaching.'
+      );
     }
 
     if (mostReliableSource) {
-      aiIncomeInsights.push({
-        type: 'summary',
-        title: 'Most reliable income source',
-        ai_noticing: `Your most reliable source right now is ${mostReliableSource}.`,
-      });
+      aiIncomeInsights.push(
+        `Your most reliable source right now is ${mostReliableSource}.`
+      );
     }
 
     const monthKeys = Object.keys(monthTotals).sort();
@@ -201,21 +163,13 @@ export const getIncomeIntelligence = async (req, res) => {
       const prevKey = monthKeys[monthKeys.length - 2];
       const diff = monthTotals[lastKey] - monthTotals[prevKey];
       if (diff > 0) {
-        aiIncomeInsights.push({
-          type: 'summary',
-          title: 'Income increased',
-          ai_noticing: `Income increased by ${formatCurrency(
-            diff
-          )} vs last period.`,
-        });
+        aiIncomeInsights.push(
+          `Income increased by ${formatCurrency(diff)} vs last period.`
+        );
       } else if (diff < 0) {
-        aiIncomeInsights.push({
-          type: 'summary',
-          title: 'Income dropped',
-          ai_noticing: `Income dropped by ${formatCurrency(
-            Math.abs(diff)
-          )} vs last period.`,
-        });
+        aiIncomeInsights.push(
+          `Income dropped by ${formatCurrency(Math.abs(diff))} vs last period.`
+        );
       }
     }
 

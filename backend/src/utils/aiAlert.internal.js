@@ -118,12 +118,80 @@ export async function shouldCreateOrUpdateAlert(userId, areaInfo, decision) {
 
 
 /* ============================================
-   GENERATE AND STORE AI INSIGHT
+   GENERATE AND STORE AI INSIGHT (PAGE-SPECIFIC)
 ============================================*/
 
-async function generateAndStoreAiInsight(alert, stats, behaviorProfile = {}) {
+async function generateAndStoreAiInsight(alert, stats, behaviorProfile = {}, goals = [], recentTransactions = []) {
   try {
-    console.log(`🤖 [AI Insight] Generating insight for alert: ${alert._id}`);
+    // Detect page from alert scope
+    let page = "dashboard";
+    const scope = alert.scope?.toLowerCase();
+    
+    if (scope === "income") {
+      page = "income";
+    } else if (scope === "expense") {
+      page = "expense";
+    } else if (scope === "saving") {
+      page = "savings";
+    } else if (scope === "investment") {
+      page = "investment";
+    } else if (scope === "goal") {
+      page = "goals";
+    } else {
+      page = "dashboard";
+    }
+
+    console.log(`🤖 [AI Insight] Generating ${page} report for alert: ${alert._id}`);
+    
+    // Fetch recent transactions if not provided
+    if (!recentTransactions || recentTransactions.length === 0) {
+      try {
+        const Transaction = (await import('../models/Transaction.js')).default;
+        
+        // Fetch last 20 transactions, filtered by type if page-specific
+        const query = { userId: alert.userId };
+        
+        // Page-specific filtering
+        if (page === 'income') {
+          query.type = 'income';
+        } else if (page === 'expense') {
+          query.type = 'expense';
+        } else if (page === 'savings') {
+          query.type = 'saving';
+        } else if (page === 'investment') {
+          query.type = 'investment';
+        }
+        // For goals and dashboard, fetch all types
+        
+        recentTransactions = await Transaction.find(query)
+          .sort({ occurredAt: -1, createdAt: -1 })
+          .limit(20)
+          .select('type category subtype amount note occurredAt')
+          .lean();
+        
+        console.log(`📊 [AI Insight] Fetched ${recentTransactions.length} recent transactions for context`);
+      } catch (txError) {
+        console.warn(`⚠️ [AI Insight] Failed to fetch transactions:`, txError.message);
+        recentTransactions = [];
+      }
+    }
+
+    // Prepare goal metadata for prediction (goals page only)
+    let goalMetadata = {};
+    if (page === 'goals' && alert.meta?.goalId && goals.length > 0) {
+      const targetGoal = goals.find(g => g._id?.toString() === alert.meta.goalId?.toString());
+      if (targetGoal) {
+        goalMetadata = {
+          needsPrediction: true,
+          goalId: targetGoal._id,
+          goalName: targetGoal.name,
+          targetAmount: targetGoal.targetAmount,
+          currentAmount: targetGoal.currentAmount || 0,
+          deadline: targetGoal.deadline,
+          priority: targetGoal.priority
+        };
+      }
+    }
     
     const response = await axios.post(`${AI_SERVICE_URL}/ai/insights`, {
       userId: alert.userId.toString(),
@@ -132,38 +200,95 @@ async function generateAndStoreAiInsight(alert, stats, behaviorProfile = {}) {
         level: alert.level,
         scope: alert.scope,
         title: alert.title,
-        reasons: alert.meta?.lastReasons || []
+        reasons: alert.meta?.lastReasons || [],
+        metadata: {
+          ...alert.meta,
+          ...goalMetadata
+        }
       },
       stats: stats || {},
+      goals: goals || [],
       behaviorProfile: behaviorProfile || {},
-      dataConfidence: "high" // Assuming high confidence for real transaction data
+      recentTransactions: recentTransactions || [],
+      page: page,
+      dataConfidence: "high"
     }, {
-      timeout: 10000 // 10 second timeout
+      timeout: 30000 // 30 second timeout for AI generation
     });
 
-    if (response.data?.success && response.data?.insight) {
-      const insight = response.data.insight;
-      
-      // Update alert with AI insight
-      alert.aiInsight = {
-        title: insight.title,
-        ai_noticing: insight.ai_noticing,
-        positive: insight.positive,
-        improvement: insight.improvement,
-        action: insight.action,
-        generatedAt: new Date()
-      };
-      
-      await alert.save();
-      
-      console.log(`✅ [AI Insight] Stored insight for alert: ${alert._id}`);
-      return insight;
+    if (response.data?.success) {
+      // Check if we got the new 5-report format
+      if (response.data.fullInsights && response.data.fullInsights.reports) {
+        // New unified 5-report format
+        alert.fullInsights = {
+          classifiedType: response.data.fullInsights.classifiedType || page || "general",
+          updatedAt: new Date(response.data.fullInsights.updatedAt || Date.now()),
+          reports: response.data.fullInsights.reports
+        };
+        
+        // Also update pageReports for backward compatibility
+        if (!alert.pageReports) {
+          alert.pageReports = {};
+        }
+        
+        // Update the specific page report
+        const pageReport = response.data.fullInsights.reports[page] || response.data.fullInsights.reports.dashboard || response.data.fullInsights.reports.income;
+        if (pageReport) {
+          alert.pageReports[page] = {
+            updatedAt: new Date(),
+            title: pageReport.title || alert.title,
+            positives: pageReport.positive || "",
+            negatives: pageReport.warning || "",
+            action: pageReport.actionStep || ""
+          };
+        }
+        
+        await alert.save();
+        console.log(`📊 Full 5-report insights stored for alert: ${alert._id}`);
+        return response.data.fullInsights;
+      } else if (response.data?.insight) {
+        // Legacy single insight format (backward compatibility)
+        const insight = response.data.insight;
+        
+        // Initialize pageReports if it doesn't exist
+        if (!alert.pageReports) {
+          alert.pageReports = {};
+        }
+        
+        // Save to pageReports
+        alert.pageReports[page] = {
+          updatedAt: new Date(),
+          title: insight.title || alert.title,
+          positives: insight.positive || "",
+          negatives: insight.improvement || "",
+          action: insight.action || ""
+        };
+        
+        // Also update legacy aiInsight for backward compatibility
+        alert.aiInsight = {
+          title: insight.title,
+          ai_noticing: insight.ai_noticing || "",
+          positive: insight.positive,
+          improvement: insight.improvement,
+          action: insight.action,
+          generatedAt: new Date()
+        };
+        
+        await alert.save();
+        
+        console.log(`📊 Page report updated: ${page}`);
+        console.log(`✅ [AI Insight] Stored ${page} report for alert: ${alert._id}`);
+        return insight;
+      } else {
+        console.warn(`⚠️ [AI Insight] AI service returned unsuccessful response`);
+        return null;
+      }
     } else {
       console.warn(`⚠️ [AI Insight] AI service returned unsuccessful response`);
       return null;
     }
   } catch (error) {
-    console.error(`❌ [AI Insight] Failed to generate insight:`, error.message);
+    console.error(`❌ [AI Insight] Failed to generate ${page} report:`, error.message);
     // Don't throw - insight generation failure shouldn't break alert creation
     return null;
   }
@@ -179,7 +304,9 @@ export async function createOrUpdateAiAlert({
   areaInfo,
   decision,
   transaction,
-  stats
+  stats,
+  goals = [],
+  history = {}
 }) {
 
   const now = new Date();
@@ -224,10 +351,6 @@ export async function createOrUpdateAiAlert({
 
       lastReasons: decision.reasons,
       lastCategory: transaction.category,
-      lastType: transaction.type,
-      lastScope: areaInfo.scope,
-      lastAreaKey: areaInfo.areaKey,
-      behavioralFlags: decision.behavioralFlags || {},
       lastAmount: transaction.amount,
 
       statsSnapshot: {
@@ -256,7 +379,8 @@ export async function createOrUpdateAiAlert({
     });
 
     // Generate and store AI insight asynchronously (don't block alert creation)
-    generateAndStoreAiInsight(newAlert, stats).catch(err => {
+    const recentTransactions = history.recentExpenses?.slice(0, 10) || [];
+    generateAndStoreAiInsight(newAlert, stats, {}, goals, recentTransactions).catch(err => {
       console.error(`❌ [AI Insight] Background insight generation failed:`, err.message);
     });
 
@@ -276,7 +400,8 @@ export async function createOrUpdateAiAlert({
     await existing.save();
 
     // Generate and store AI insight asynchronously (don't block alert update)
-    generateAndStoreAiInsight(existing, stats).catch(err => {
+    const recentTransactions = history.recentExpenses?.slice(0, 10) || [];
+    generateAndStoreAiInsight(existing, stats, {}, goals, recentTransactions).catch(err => {
       console.error(`❌ [AI Insight] Background insight generation failed:`, err.message);
     });
 

@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
+import { getGoalsInsight } from '../services/aiInsightsService';
+import { getDashboardData } from '../services/dashboardService';
+import InsightCard from '../components/InsightCard';
 
 /**
  * Goals Page - AI-Powered Financial Goals & Future Planning
@@ -8,6 +11,34 @@ import Layout from '../components/Layout';
  */
 export default function Goals() {
   const [showAddGoal, setShowAddGoal] = useState(false);
+
+  // AI Insights state
+  const [goalsReport, setGoalsReport] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchGoalsInsight = async () => {
+      try {
+        let userId = document.body.dataset.userId;
+        if (!userId) {
+          const dashboardData = await getDashboardData().catch(() => null);
+          userId = dashboardData?.userId;
+          if (!userId) {
+            setGoalsReport(null);
+            return;
+          }
+        }
+        const response = await getGoalsInsight(userId);
+        if (response.success && response.report) {
+          setGoalsReport(response.report);
+        } else {
+          setGoalsReport(null);
+        }
+      } catch (err) {
+        setGoalsReport(null);
+      }
+    };
+    fetchGoalsInsight();
+  }, []);
 
   // Active Goals Data
   const goals = [
@@ -45,7 +76,11 @@ export default function Goals() {
     {
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
+          <path
+            fillRule="evenodd"
+            d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"
+            clipRule="evenodd"
+          />
         </svg>
       ),
       text: 'If you increase savings by ₹500/month, Laptop goal moves 4 months earlier',
@@ -53,7 +88,11 @@ export default function Goals() {
     {
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+          <path
+            fillRule="evenodd"
+            d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+            clipRule="evenodd"
+          />
         </svg>
       ),
       text: 'Emergency Buffer should be prioritised before travel',
@@ -61,7 +100,11 @@ export default function Goals() {
     {
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+          <path
+            fillRule="evenodd"
+            d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+            clipRule="evenodd"
+          />
         </svg>
       ),
       text: 'Based on your income style, flexible contributions will work better',
@@ -70,7 +113,11 @@ export default function Goals() {
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
           <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
-          <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
+          <path
+            fillRule="evenodd"
+            d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z"
+            clipRule="evenodd"
+          />
         </svg>
       ),
       text: 'You are currently on-track for 2 out of 3 goals',
@@ -79,7 +126,7 @@ export default function Goals() {
 
   return (
     <Layout>
-      <div className="min-h-screen bg-pastel-beige">
+      <div className="min-h-screen bg-pastel-beige dark:bg-gray-900">
         {/* Main Content */}
         <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-4 md:space-y-6">
           {/* Header */}
@@ -106,7 +153,9 @@ export default function Goals() {
             </div>
 
             <div className="bg-white/80 rounded-3xl p-6 shadow-soft border border-pastel-tan/20">
-              <p className="text-sm text-text/50 mb-2">Required Monthly Focus</p>
+              <p className="text-sm text-text/50 mb-2">
+                Required Monthly Focus
+              </p>
               <p className="text-3xl font-semibold text-text mb-1">
                 ₹3,000 – ₹4,500
               </p>
@@ -115,15 +164,19 @@ export default function Goals() {
 
             <div className="bg-white/80 rounded-3xl p-6 shadow-soft border border-pastel-tan/20">
               <p className="text-sm text-text/50 mb-2">Most Important Goal</p>
-              <p className="text-3xl font-semibold text-text mb-1">Emergency Buffer</p>
+              <p className="text-3xl font-semibold text-text mb-1">
+                Emergency Buffer
+              </p>
               <p className="text-xs text-text/40">High Priority</p>
             </div>
           </div>
 
           {/* Goal Timeline - Hero Section */}
           <div className="bg-white/80 rounded-3xl p-6 shadow-soft border border-pastel-tan/20">
-            <h2 className="text-xl font-semibold text-text mb-6">Goal Timeline</h2>
-            
+            <h2 className="text-xl font-semibold text-text mb-6">
+              Goal Timeline
+            </h2>
+
             <div className="space-y-6">
               {goals.map((goal, index) => (
                 <div
@@ -143,7 +196,9 @@ export default function Goals() {
                           {goal.priority}
                         </span>
                       </div>
-                      <p className="text-sm text-text/60">Target: {goal.target}</p>
+                      <p className="text-sm text-text/60">
+                        Target: {goal.target}
+                      </p>
                     </div>
                     <div className="flex gap-2">
                       <button className="px-3 py-1.5 text-xs rounded-lg border border-pastel-tan/30 text-text hover:bg-pastel-orange/20 transition-colors">
@@ -159,7 +214,9 @@ export default function Goals() {
                   <div className="mb-4">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm text-text/60">Progress</span>
-                      <span className="text-sm font-medium text-text">{goal.progress}%</span>
+                      <span className="text-sm font-medium text-text">
+                        {goal.progress}%
+                      </span>
                     </div>
                     <div className="w-full h-3 bg-pastel-tan/20 rounded-full overflow-hidden">
                       <div
@@ -173,11 +230,17 @@ export default function Goals() {
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pt-4 border-t border-pastel-tan/20">
                     <div>
                       <p className="text-xs text-text/50 mb-1">Timeline</p>
-                      <p className="text-sm text-text font-medium">{goal.timeline}</p>
+                      <p className="text-sm text-text font-medium">
+                        {goal.timeline}
+                      </p>
                     </div>
                     <div>
-                      <p className="text-xs text-text/50 mb-1">Monthly Contribution</p>
-                      <p className="text-sm text-text font-medium">{goal.monthlyContribution}</p>
+                      <p className="text-xs text-text/50 mb-1">
+                        Monthly Contribution
+                      </p>
+                      <p className="text-sm text-text font-medium">
+                        {goal.monthlyContribution}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-text/50 mb-1">Status</p>
@@ -192,11 +255,13 @@ export default function Goals() {
 
             {/* Timeline Visualization */}
             <div className="mt-8 pt-6 border-t border-pastel-tan/20">
-              <h3 className="text-sm font-semibold text-text mb-4">Timeline Overview</h3>
+              <h3 className="text-sm font-semibold text-text mb-4">
+                Timeline Overview
+              </h3>
               <div className="relative">
                 {/* Timeline line */}
                 <div className="absolute left-0 top-6 w-full h-0.5 bg-pastel-tan/30"></div>
-                
+
                 {/* Timeline markers */}
                 <div className="relative flex justify-between">
                   <div className="flex flex-col items-center">
@@ -221,24 +286,14 @@ export default function Goals() {
           </div>
 
           {/* AI Planning Intelligence - Hero Intelligence Section */}
-          <div className="bg-white/80 rounded-3xl p-6 shadow-soft border border-pastel-tan/20">
-            <h2 className="text-xl font-semibold text-text mb-4">
-              Fintastic AI Suggestions
-            </h2>
-            <div className="space-y-3">
-              {aiInsights.map((insight, index) => (
-                <div
-                  key={index}
-                  className="bg-pastel-beige/50 rounded-2xl p-4 border border-pastel-tan/20 flex items-start gap-3"
-                >
-                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-pastel-green/40 flex items-center justify-center mt-0.5 text-text">
-                    {insight.icon}
-                  </div>
-                  <p className="text-sm text-text flex-1">{insight.text}</p>
-                </div>
-              ))}
+          {goalsReport && (
+            <div>
+              <h2 className="text-xl font-semibold text-text mb-4">
+                Fintastic AI Suggestions
+              </h2>
+              <InsightCard report={goalsReport} />
             </div>
-          </div>
+          )}
 
           {/* Add New Goal */}
           <div className="bg-white/80 rounded-3xl p-6 shadow-soft border border-pastel-tan/20">
@@ -340,11 +395,21 @@ export default function Goals() {
                 {/* AI Auto-suggestion */}
                 <div className="bg-pastel-blue/10 rounded-2xl p-4 border border-pastel-tan/20">
                   <div className="flex items-start gap-3">
-                    <svg className="w-5 h-5 text-text/60 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                    <svg
+                      className="w-5 h-5 text-text/60 flex-shrink-0 mt-0.5"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                        clipRule="evenodd"
+                      />
                     </svg>
                     <div>
-                      <p className="text-xs text-text/50 mb-1">AI Recommendation</p>
+                      <p className="text-xs text-text/50 mb-1">
+                        AI Recommendation
+                      </p>
                       <p className="text-sm text-text">
                         Recommended monthly contribution: ₹2,000 – ₹3,500
                       </p>
@@ -370,8 +435,18 @@ export default function Goals() {
           {/* Risk / Reality Bar */}
           <div className="bg-pastel-orange/10 rounded-2xl p-4 border border-pastel-tan/20">
             <div className="flex items-start gap-3">
-              <svg className="w-5 h-5 text-text/60 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <svg
+                className="w-5 h-5 text-text/60 flex-shrink-0 mt-0.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
               </svg>
               <div>
                 <p className="text-sm text-text mb-1">

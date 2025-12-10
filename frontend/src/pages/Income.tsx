@@ -6,10 +6,29 @@ import {
   addIncomeEntry,
 } from '../services/incomeService';
 import { getDashboardData } from '../services/dashboardService';
+import { getIncomeInsight } from '../services/aiInsightsService';
+import InsightCard from '../components/InsightCard';
 
 const formatCurrency = (value?: number) => {
   if (!value || Number.isNaN(value)) return '₹0';
   return `₹${Math.round(value).toLocaleString('en-IN')}`;
+};
+
+const formatTimestamp = (timestamp?: string) => {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
 };
 
 const stabilityClassMap: Record<string, string> = {
@@ -24,20 +43,6 @@ const stabilityDotMap: Record<string, string> = {
   low: 'bg-rose-500',
 };
 
-type IncomeInsight = {
-  type?: 'alert' | 'summary';
-  title?: string;
-  ai_noticing?: string;
-  positive?: string | null;
-  improvement?: string | null;
-  action?: string | null;
-  reasonSummary?: string[];
-  level?: string;
-  scope?: string;
-  createdAt?: string;
-  text?: string;
-};
-
 export default function Income() {
   const [intelligence, setIntelligence] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -47,6 +52,9 @@ export default function Income() {
   const [description, setDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // AI Insights state
+  const [incomeReport, setIncomeReport] = useState<any>(null);
 
   const fetchIncomeData = async () => {
     setIsLoading(true);
@@ -67,8 +75,31 @@ export default function Income() {
     }
   };
 
+  const fetchAiInsights = async () => {
+    try {
+      let userId = document.body.dataset.userId || intelligence?.userId;
+      if (!userId) {
+        const dashboardData = await getDashboardData().catch(() => null);
+        userId = dashboardData?.userId;
+        if (!userId) {
+          setIncomeReport(null);
+          return;
+        }
+      }
+      const response = await getIncomeInsight(userId);
+      if (response.success && response.report) {
+        setIncomeReport(response.report);
+      } else {
+        setIncomeReport(null);
+      }
+    } catch (err) {
+      setIncomeReport(null);
+    }
+  };
+
   useEffect(() => {
     fetchIncomeData();
+    fetchAiInsights();
   }, []);
 
   const handleAddIncome = async (event: FormEvent) => {
@@ -100,6 +131,7 @@ export default function Income() {
       setDescription('');
       setShowAddIncome(false);
       await fetchIncomeData();
+      await fetchAiInsights(); // Refresh insights after adding income
       // Refresh dashboard data (also uses cookie-based auth)
       await getDashboardData().catch(() => null);
     } catch (err: any) {
@@ -126,31 +158,11 @@ export default function Income() {
   const stabilityTextClass = stabilityClassMap[stabilityKey] || 'text-text';
   const stabilityDotClass = stabilityDotMap[stabilityKey] || 'bg-pastel-tan';
 
-  const rawInsights: any[] = intelligence?.aiIncomeInsights || [];
-  const aiInsights: IncomeInsight[] = rawInsights.map((entry) =>
-    typeof entry === 'string'
-      ? {
-          type: 'summary',
-          title: 'Income update',
-          ai_noticing: entry,
-        }
-      : entry
-  );
   const incomeSources: any[] = intelligence?.incomeSources || [];
-
-  const formatInsightDate = (dateValue?: string) => {
-    if (!dateValue) return null;
-    const parsed = new Date(dateValue);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return parsed.toLocaleDateString('en-IN', {
-      month: 'short',
-      day: 'numeric',
-    });
-  };
 
   return (
     <Layout>
-      <div className="min-h-screen bg-pastel-beige">
+      <div className="min-h-screen bg-pastel-beige dark:bg-gray-900">
         <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
           <div className="mb-2">
             <h1 className="text-2xl md:text-3xl font-semibold text-text mb-2">
@@ -218,88 +230,14 @@ export default function Income() {
               </div>
 
               {/* AI coach */}
-              <div className="bg-white/80 rounded-3xl p-6 shadow-soft border border-pastel-tan/20">
-                <h2 className="text-xl font-semibold text-text mb-4">
-                  AI Income Coach is noticing
-                </h2>
-                {aiInsights.length === 0 ? (
-                  <p className="text-sm text-text/60">
-                    AI is still learning your income pattern.
-                  </p>
-                ) : (
-                  <ul className="space-y-3">
-                    {aiInsights.map((insight, idx) => {
-                      const {
-                        title: insightTitle = 'Income insight',
-                        ai_noticing: noticing = 'Insight available',
-                        positive,
-                        improvement,
-                        action,
-                        reasonSummary = [],
-                        level,
-                        createdAt,
-                      } = insight || {};
-                      const insightDate = formatInsightDate(createdAt);
-
-                      return (
-                        <li
-                          key={`${insightTitle}-${idx}`}
-                          className="bg-pastel-beige/60 rounded-2xl p-4 border border-pastel-tan/20 text-sm text-text"
-                        >
-                          <div className="flex items-center justify-between gap-2 mb-2">
-                            <p className="text-base font-semibold text-text">
-                              {insightTitle}
-                            </p>
-                            <div className="flex items-center gap-2 text-xs text-text/60">
-                              {level && (
-                                <span className="px-2 py-0.5 rounded-full bg-white/70 border border-pastel-tan/40 text-[11px] uppercase tracking-wide">
-                                  {level}
-                                </span>
-                              )}
-                              {insightDate && <span>{insightDate}</span>}
-                            </div>
-                          </div>
-                          <p className="text-sm text-text/80">{noticing}</p>
-
-                          {reasonSummary.length > 0 && (
-                            <div className="mt-3 space-y-1">
-                              {reasonSummary.map((reason, reasonIdx) => (
-                                <p
-                                  key={`${reason}-${reasonIdx}`}
-                                  className="text-xs text-text/70"
-                                >
-                                  • {reason}
-                                </p>
-                              ))}
-                            </div>
-                          )}
-
-                          {positive && (
-                            <p className="text-xs text-emerald-600 mt-2">
-                              <span className="font-semibold">Positive:</span>{' '}
-                              {positive}
-                            </p>
-                          )}
-
-                          {improvement && (
-                            <p className="text-xs text-amber-700 mt-1">
-                              <span className="font-semibold">Improvement:</span>{' '}
-                              {improvement}
-                            </p>
-                          )}
-
-                          {action && (
-                            <p className="text-xs text-text mt-1">
-                              <span className="font-semibold">Action:</span>{' '}
-                              {action}
-                            </p>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
+              {incomeReport && (
+                <div>
+                  <h2 className="text-xl font-semibold text-text mb-4">
+                    AI Income Coach is noticing
+                  </h2>
+                  <InsightCard report={incomeReport} />
+                </div>
+              )}
 
               {/* Income sources */}
               <div>

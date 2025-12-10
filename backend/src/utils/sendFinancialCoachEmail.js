@@ -224,4 +224,3 @@ Fintastic AI Coach
     // Don't throw - email failure shouldn't break the flow
   }
 }
-

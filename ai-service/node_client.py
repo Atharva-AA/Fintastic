@@ -170,3 +170,62 @@ def create_goal_tool(user_id, name, target_amount, deadline=None, priority="good
         print(f"❌ [node_client] ERROR in create_goal_tool: {e}")
         print(f"❌ [node_client] ERROR type: {type(e)}")
         raise
+
+
+def fetch_recent_transactions(user_id, page=None, limit=20):
+    """
+    Fetch recent transactions for AI context
+    
+    Args:
+        user_id: User ID
+        page: Optional page filter (income/expense/savings/investment/goals/dashboard)
+        limit: Number of transactions to fetch (default 20, max 50)
+    
+    Returns:
+        List of transaction dicts
+    """
+    print(f"📊 [node_client] fetch_recent_transactions CALLED")
+    print(f"📊 [node_client] URL: {NODE_BASE}/api/ai-internal/get-recent-transactions")
+    print(f"📊 [node_client] userId={user_id}, page={page}, limit={limit}")
+    
+    if not AI_SECRET:
+        print("❌ [node_client] ERROR: Cannot make request without AI_SECRET!")
+        return []
+    
+    try:
+        filters = {"limit": min(limit, 50)}  # Cap at 50
+        
+        # Page-specific filtering
+        if page == "income":
+            filters["type"] = "income"
+        elif page == "expense":
+            filters["type"] = "expense"
+        elif page == "savings":
+            filters["type"] = "saving"
+        elif page == "investment":
+            filters["type"] = "investment"
+        # For goals and dashboard, fetch all types
+        
+        response = requests.post(
+            f"{NODE_BASE}/api/ai-internal/get-recent-transactions",
+            json={"userId": user_id, "filters": filters},
+            headers=HEADERS,
+            timeout=10
+        )
+        
+        print(f"📊 [node_client] Response status: {response.status_code}")
+        
+        if response.status_code == 200:
+            result = response.json()
+            transactions = result.get("transactions", [])
+            print(f"📊 [node_client] Fetched {len(transactions)} transactions")
+            return transactions
+        else:
+            print(f"⚠️ [node_client] Failed to fetch transactions: {response.status_code}")
+            print(f"⚠️ [node_client] Response: {response.text}")
+            return []
+            
+    except Exception as e:
+        print(f"❌ [node_client] ERROR in fetch_recent_transactions: {e}")
+        print(f"❌ [node_client] ERROR type: {type(e)}")
+        return []

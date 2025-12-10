@@ -3,6 +3,7 @@ import Transaction from '../models/Transaction.js';
 import Goal from '../models/Goal.js';
 import FinancialReport from '../models/FinancialReport.js';
 import AiAlert from '../models/AiAlert.js';
+import GmailToken from '../models/GmailToken.js';
 
 const CHROMA_SEARCH_URL =
   process.env.CHROMA_SEARCH_URL || 'http://localhost:8001/search-memory';
@@ -208,8 +209,30 @@ export const getDashboardData = async (req, res) => {
         }
       : null;
 
+    // Check if Gmail is connected
+    let gmailToken = await GmailToken.findOne({ userId });
+    let isGmailConnected = !!gmailToken;
+    
+    // Fallback: If no GmailToken record but user has pending Gmail transactions,
+    // assume Gmail is connected and create the record
+    if (!isGmailConnected) {
+      const GmailPendingTransaction = (await import('../models/GmailPendingTransaction.js')).default;
+      const pendingCount = await GmailPendingTransaction.countDocuments({ userId });
+      if (pendingCount > 0) {
+        // User has pending transactions, so Gmail must be connected
+        // Create GmailToken record for backward compatibility
+        gmailToken = await GmailToken.create({
+          userId,
+          connectedAt: new Date(),
+        });
+        isGmailConnected = true;
+        console.log(`✅ Created GmailToken record for user ${userId} (had ${pendingCount} pending transactions)`);
+      }
+    }
+
     res.json({
       success: true,
+      userId: userId.toString(),
       summary: {
         totalSpentThisMonth: Math.round(totalSpentThisMonth),
         totalIncomeThisMonth: Math.round(totalIncomeThisMonth),
@@ -222,6 +245,7 @@ export const getDashboardData = async (req, res) => {
       topCategories: sortedCategories,
       goals: formattedGoals,
       report,
+      isGmailConnected,
     });
   } catch (error) {
     console.error('Dashboard error:', error);

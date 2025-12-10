@@ -4,14 +4,18 @@
   "version": "1.0",
   "manifest_version": 3,
 
-  "permissions": ["activeTab", "storage", "scripting"],
+  "permissions": ["activeTab", "scripting", "storage", "cookies"],
 
   "host_permissions": [
-    "*://*.amazon.in/*",
-    "*://*.amazon.com/*",
-    "*://*.flipkart.com/*",
-    "*://localhost:*/*"
+    "https://www.amazon.in/*",
+    "https://www.flipkart.com/*",
+    "http://localhost:5174/*",
+    "http://127.0.0.1:3000/*"
   ],
+
+  "background": {
+    "service_worker": "background.js"
+  },
 
   "action": {
     "default_popup": "popup.html"
@@ -19,13 +23,8 @@
 
   "content_scripts": [
     {
-      "matches": [
-        "*://*.amazon.in/*",
-        "*://*.amazon.com/*",
-        "*://*.flipkart.com/*"
-      ],
+      "matches": ["https://www.amazon.in/*", "https://www.flipkart.com/*"],
       "js": ["content.js"]
     }
   ]
 }
-

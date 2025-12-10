@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
+import { getExpenseInsight } from '../services/aiInsightsService';
+import { getDashboardData } from '../services/dashboardService';
+import InsightCard from '../components/InsightCard';
 
 /**
  * Expenses Page - AI-Powered Spending Intelligence
@@ -9,12 +12,64 @@ import Layout from '../components/Layout';
 export default function Expenses() {
   const [showAddExpense, setShowAddExpense] = useState(false);
 
+  // AI Insights state
+  const [expenseReport, setExpenseReport] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchExpenseInsight = async () => {
+      try {
+        let userId = document.body.dataset.userId;
+        if (!userId) {
+          const dashboardData = await getDashboardData().catch(() => null);
+          userId = dashboardData?.userId;
+          if (!userId) {
+            setExpenseReport(null);
+            return;
+          }
+        }
+        const response = await getExpenseInsight(userId);
+        if (response.success && response.report) {
+          setExpenseReport(response.report);
+        } else {
+          setExpenseReport(null);
+        }
+      } catch (err) {
+        setExpenseReport(null);
+      }
+    };
+    fetchExpenseInsight();
+  }, []);
+
   // Money Map Data (Donut chart percentages)
   const moneyMap = [
-    { category: 'Needs', percentage: 54, color: 'bg-pastel-green', status: 'Healthy', statusColor: 'bg-pastel-green' },
-    { category: 'Wants', percentage: 26, color: 'bg-pastel-orange', status: 'Slightly high', statusColor: 'bg-pastel-orange' },
-    { category: 'Goals', percentage: 12, color: 'bg-pastel-blue', status: 'On track', statusColor: 'bg-pastel-green' },
-    { category: 'Obligations', percentage: 8, color: 'bg-pastel-tan', status: 'Under control', statusColor: 'bg-pastel-green' },
+    {
+      category: 'Needs',
+      percentage: 54,
+      color: 'bg-pastel-green',
+      status: 'Healthy',
+      statusColor: 'bg-pastel-green',
+    },
+    {
+      category: 'Wants',
+      percentage: 26,
+      color: 'bg-pastel-orange',
+      status: 'Slightly high',
+      statusColor: 'bg-pastel-orange',
+    },
+    {
+      category: 'Goals',
+      percentage: 12,
+      color: 'bg-pastel-blue',
+      status: 'On track',
+      statusColor: 'bg-pastel-green',
+    },
+    {
+      category: 'Obligations',
+      percentage: 8,
+      color: 'bg-pastel-tan',
+      status: 'Under control',
+      statusColor: 'bg-pastel-green',
+    },
   ];
 
   // Category Insight Cards
@@ -58,7 +113,11 @@ export default function Expenses() {
     {
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+          <path
+            fillRule="evenodd"
+            d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+            clipRule="evenodd"
+          />
         </svg>
       ),
       text: '42% of your "Wants" spending happens after 9 PM',
@@ -66,7 +125,11 @@ export default function Expenses() {
     {
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+          <path
+            fillRule="evenodd"
+            d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+            clipRule="evenodd"
+          />
         </svg>
       ),
       text: 'Subscriptions you rarely use: Netflix, Spotify',
@@ -74,7 +137,11 @@ export default function Expenses() {
     {
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-          <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
+          <path
+            fillRule="evenodd"
+            d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"
+            clipRule="evenodd"
+          />
         </svg>
       ),
       text: 'If you reduce food delivery by ₹300/week → Save ~₹1,200/month',
@@ -83,7 +150,11 @@ export default function Expenses() {
       icon: (
         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
           <path d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z" />
-          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z" clipRule="evenodd" />
+          <path
+            fillRule="evenodd"
+            d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z"
+            clipRule="evenodd"
+          />
         </svg>
       ),
       text: 'Safe daily spend range: ₹500–₹700',
@@ -92,22 +163,46 @@ export default function Expenses() {
 
   return (
     <Layout>
-      <div className="min-h-screen bg-pastel-beige">
+      <div className="min-h-screen bg-pastel-beige dark:bg-gray-900">
         {/* Main Content */}
         <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-4 md:space-y-6">
           {/* Quick Warnings Bar */}
           <div className="bg-pastel-orange/20 rounded-2xl p-4 border border-pastel-tan/20 flex items-center gap-4 flex-wrap">
             <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 text-text/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              <svg
+                className="w-5 h-5 text-text/60"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
               </svg>
-              <span className="text-sm text-text/70">Overspending risk in Food</span>
+              <span className="text-sm text-text/70">
+                Overspending risk in Food
+              </span>
             </div>
             <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 text-text/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <svg
+                className="w-5 h-5 text-text/60"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
               </svg>
-              <span className="text-sm text-text/70">Next big bill expected in 5 days</span>
+              <span className="text-sm text-text/70">
+                Next big bill expected in 5 days
+              </span>
             </div>
           </div>
 
@@ -129,7 +224,9 @@ export default function Expenses() {
           {/* Top Summary Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="bg-white/80 rounded-3xl p-6 shadow-soft border border-pastel-tan/20">
-              <p className="text-sm text-text/50 mb-2">Estimated Monthly Spending</p>
+              <p className="text-sm text-text/50 mb-2">
+                Estimated Monthly Spending
+              </p>
               <p className="text-3xl font-semibold text-text mb-1">
                 ₹18,000 – ₹26,000
               </p>
@@ -152,7 +249,7 @@ export default function Expenses() {
           {/* Money Map - Hero Visual */}
           <div className="bg-white/80 rounded-3xl p-6 shadow-soft border border-pastel-tan/20">
             <h2 className="text-xl font-semibold text-text mb-6">Money Map</h2>
-            
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {/* Left: Donut Chart Representation */}
               <div className="flex flex-col items-center justify-center">
@@ -163,7 +260,7 @@ export default function Expenses() {
                   <div className="absolute inset-16 rounded-full bg-pastel-blue opacity-20"></div>
                   <div className="absolute inset-24 rounded-full bg-pastel-tan opacity-20"></div>
                   <div className="absolute inset-28 rounded-full bg-white"></div>
-                  
+
                   {/* Center text */}
                   <div className="absolute inset-0 flex items-center justify-center flex-col">
                     <p className="text-sm text-text/50">Total Spend</p>
@@ -176,8 +273,12 @@ export default function Expenses() {
                   {moneyMap.map((item, index) => (
                     <div key={index}>
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm text-text">{item.category}</span>
-                        <span className="text-sm text-text/60">{item.percentage}%</span>
+                        <span className="text-sm text-text">
+                          {item.category}
+                        </span>
+                        <span className="text-sm text-text/60">
+                          {item.percentage}%
+                        </span>
                       </div>
                       <div className="w-full h-2 bg-pastel-tan/20 rounded-full overflow-hidden">
                         <div
@@ -192,15 +293,26 @@ export default function Expenses() {
 
               {/* Right: Status Indicators */}
               <div className="flex flex-col justify-center space-y-4">
-                <h3 className="text-lg font-semibold text-text mb-2">Category Health</h3>
+                <h3 className="text-lg font-semibold text-text mb-2">
+                  Category Health
+                </h3>
                 {moneyMap.map((item, index) => (
-                  <div key={index} className="flex items-center gap-3 p-4 rounded-2xl bg-pastel-beige/50 border border-pastel-tan/20">
-                    <span className={`w-3 h-3 rounded-full ${item.statusColor} flex-shrink-0`}></span>
+                  <div
+                    key={index}
+                    className="flex items-center gap-3 p-4 rounded-2xl bg-pastel-beige/50 border border-pastel-tan/20"
+                  >
+                    <span
+                      className={`w-3 h-3 rounded-full ${item.statusColor} flex-shrink-0`}
+                    ></span>
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-text">{item.category}</p>
+                      <p className="text-sm font-medium text-text">
+                        {item.category}
+                      </p>
                       <p className="text-xs text-text/50">{item.status}</p>
                     </div>
-                    <span className="text-sm text-text/60">{item.percentage}%</span>
+                    <span className="text-sm text-text/60">
+                      {item.percentage}%
+                    </span>
                   </div>
                 ))}
               </div>
@@ -221,7 +333,7 @@ export default function Expenses() {
                   <h3 className="text-base font-semibold text-text mb-3">
                     {category.name}
                   </h3>
-                  
+
                   <div className="space-y-2 mb-4">
                     <div className="flex items-start gap-2">
                       <span className="text-xs text-text/50 mt-0.5">•</span>
@@ -234,7 +346,9 @@ export default function Expenses() {
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-text/50">•</span>
                       <span className="text-xs text-text/50">Risk:</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${category.riskColor} text-text/70`}>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full ${category.riskColor} text-text/70`}
+                      >
                         {category.risk}
                       </span>
                     </div>
@@ -251,24 +365,14 @@ export default function Expenses() {
           </div>
 
           {/* AI Spending Coach - Hero Intelligence Section */}
-          <div className="bg-white/80 rounded-3xl p-6 shadow-soft border border-pastel-tan/20">
-            <h2 className="text-xl font-semibold text-text mb-4">
-              Fintastic AI is analyzing your spending
-            </h2>
-            <div className="space-y-3">
-              {aiInsights.map((insight, index) => (
-                <div
-                  key={index}
-                  className="bg-pastel-beige/50 rounded-2xl p-4 border border-pastel-tan/20 flex items-start gap-3"
-                >
-                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-pastel-green/40 flex items-center justify-center mt-0.5 text-text">
-                    {insight.icon}
-                  </div>
-                  <p className="text-sm text-text flex-1">{insight.text}</p>
-                </div>
-              ))}
+          {expenseReport && (
+            <div>
+              <h2 className="text-xl font-semibold text-text mb-4">
+                Fintastic AI is analyzing your spending
+              </h2>
+              <InsightCard report={expenseReport} />
             </div>
-          </div>
+          )}
 
           {/* Add New Expense */}
           <div className="bg-white/80 rounded-3xl p-6 shadow-soft border border-pastel-tan/20">

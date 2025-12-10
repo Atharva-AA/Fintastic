@@ -54,13 +54,29 @@ const transactionSchema = new mongoose.Schema(
 
     source: {
       type: String,
-      enum: ['onboarding', 'manual', 'system', 'import', 'goal', 'ai'],
+      enum: [
+        'onboarding',
+        'manual',
+        'system',
+        'import',
+        'goal',
+        'ai',
+        'gmail',
+        'bank_pdf',
+      ],
       default: 'manual',
     },
 
     note: {
       type: String,
       trim: true,
+    },
+
+    hash: {
+      type: String,
+      trim: true,
+      index: true,
+      sparse: true, // Only index when hash exists (for PDF transactions)
     },
 
     occurredAt: {
@@ -75,5 +91,6 @@ const transactionSchema = new mongoose.Schema(
 // Useful indexes
 transactionSchema.index({ userId: 1, occurredAt: -1 });
 transactionSchema.index({ userId: 1, type: 1 });
+transactionSchema.index({ userId: 1, hash: 1 }); // For PDF duplicate detection
 
 export default mongoose.model('Transaction', transactionSchema);

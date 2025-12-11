@@ -6,8 +6,7 @@ import BehaviorProfile from '../models/BehaviorProfile.js';
 import { detectGigWorker } from '../utils/detectGigWorker.js';
 import Transaction from '../models/Transaction.js';
 
-const FASTAPI_URL = 'http://localhost:8001';
-
+const FASTAPI_URL = 'http://127.0.0.1:8001';
 /* ===============================
    MAIN CHAT CONTROLLER (FINAL)
 ================================== */

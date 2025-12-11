@@ -1,18 +1,36 @@
+# FastAPI & Server
 fastapi
 uvicorn
 pydantic
-chromadb
-sentence-transformers
+
+# AI & Embeddings
 groq
-dotenv
+sentence-transformers
+chromadb
+
+# Environment
 python-dotenv
+
+# Google Gmail Integration
 google-auth
 google-auth-oauthlib
 google-auth-httplib2
 google-api-python-client
+
+# HTTP & Requests
 httpx
+requests
+
+# Background Jobs
 apscheduler
+
+# PDF Parsing
 pdfminer.six
 pdfplumber
+
+# Market Data & Search
 yfinance
-tavily
+tavily-python
+
+# Utilities (used in routes)
+aiofiles

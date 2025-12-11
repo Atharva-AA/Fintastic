@@ -527,56 +527,129 @@ export default function Dashboard() {
       return;
     }
 
+    // Stop any existing recognition first
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+
+    // Cancel any ongoing speech synthesis
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+
     // Initialize Speech Recognition
     const SpeechRecognition =
       window.SpeechRecognition || (window as any).webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
 
-    recognition.lang = 'en-IN';
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
+    // Configuration for better recognition
+    recognition.lang = 'en-US'; // Changed to en-US for better recognition, works for Indian accent too
+    recognition.continuous = true; // Keep listening
+    recognition.interimResults = true; // Show intermediate results
+    recognition.maxAlternatives = 3; // Get multiple alternatives for better accuracy
 
     // Store reference for cleanup
     recognitionRef.current = recognition;
 
+    let finalTranscript = '';
+    let silenceTimer: NodeJS.Timeout | null = null;
+
     // Handle recognition start
     recognition.onstart = () => {
       setIsListening(true);
-      setVoiceMessage(null);
+      setVoiceMessage('Listening... Speak now');
       setVoiceResponse(null);
+      finalTranscript = '';
     };
 
     // Handle recognition result
-    recognition.onresult = async (event: any) => {
-      const transcript = event.results[0][0].transcript;
-      setIsListening(false);
-      setVoiceMessage(transcript);
-      setIsProcessingVoice(true);
-
-      try {
-        // Send recognized text to AI chat endpoint
-        const response = await sendChatMessage(transcript);
-        if (response?.message) {
-          setVoiceResponse(response.message);
-          // Speak the response out loud
-          speak(response.message);
+    recognition.onresult = (event: any) => {
+      let interimTranscript = '';
+      
+      // Process all results
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript + ' ';
         } else {
-          setVoiceResponse(
-            'I could not generate a response. Please try again.'
-          );
-          speak('I could not generate a response. Please try again.');
+          interimTranscript += transcript;
         }
-      } catch (error: any) {
-        console.error('Voice chat error:', error);
-        const errorMsg =
-          error?.response?.status === 401
-            ? 'Please sign in again to continue.'
-            : '⚠️ AI is overloaded. Try again in a moment.';
-        setVoiceResponse(errorMsg);
-        speak(errorMsg);
-      } finally {
-        setIsProcessingVoice(false);
+      }
+
+      // Show what's being heard in real-time
+      const displayText = finalTranscript + interimTranscript;
+      if (displayText.trim()) {
+        setVoiceMessage(`🎤 "${displayText.trim()}"`);
+      }
+
+      // Reset silence timer on each result
+      if (silenceTimer) {
+        clearTimeout(silenceTimer);
+      }
+
+      // Auto-stop after 2 seconds of silence when we have final transcript
+      if (finalTranscript.trim()) {
+        silenceTimer = setTimeout(() => {
+          if (recognitionRef.current) {
+            recognitionRef.current.stop();
+          }
+        }, 2000);
+      }
+    };
+
+    // Handle speech end - process the final transcript
+    recognition.onspeechend = () => {
+      // Give a small delay for any final processing
+      setTimeout(() => {
+        if (recognitionRef.current) {
+          recognitionRef.current.stop();
+        }
+      }, 500);
+    };
+
+    // Handle recognition end - now process the message
+    recognition.onend = async () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+      
+      if (silenceTimer) {
+        clearTimeout(silenceTimer);
+      }
+
+      const trimmedTranscript = finalTranscript.trim();
+      
+      if (trimmedTranscript) {
+        setVoiceMessage(`You said: "${trimmedTranscript}"`);
+        setIsProcessingVoice(true);
+
+        try {
+          // Send recognized text to AI chat endpoint
+          const response = await sendChatMessage(trimmedTranscript);
+          if (response?.message) {
+            setVoiceResponse(response.message);
+            // Speak the response out loud
+            speak(response.message);
+          } else {
+            setVoiceResponse(
+              'I could not generate a response. Please try again.'
+            );
+            speak('I could not generate a response. Please try again.');
+          }
+        } catch (error: any) {
+          console.error('Voice chat error:', error);
+          const errorMsg =
+            error?.response?.status === 401
+              ? 'Please sign in again to continue.'
+              : '⚠️ AI is overloaded. Try again in a moment.';
+          setVoiceResponse(errorMsg);
+          speak(errorMsg);
+        } finally {
+          setIsProcessingVoice(false);
+        }
+      } else {
+        setVoiceMessage('No speech detected. Please try again.');
+        setTimeout(() => setVoiceMessage(null), 3000);
       }
     };
 
@@ -585,28 +658,33 @@ export default function Dashboard() {
       console.error('Speech recognition error:', event.error);
       setIsListening(false);
       setIsProcessingVoice(false);
+      
+      if (silenceTimer) {
+        clearTimeout(silenceTimer);
+      }
 
       let errorMsg = 'Could not understand. Please try again.';
       if (event.error === 'no-speech') {
-        errorMsg = 'No speech detected. Please try again.';
-      } else if (event.error === 'not-allowed') {
+        errorMsg = 'No speech detected. Please speak clearly and try again.';
+      } else if (event.error === 'not-allowed' || event.error === 'permission-denied') {
         errorMsg =
-          'Microphone permission denied. Please allow microphone access.';
+          'Microphone permission denied. Please allow microphone access in your browser settings.';
+      } else if (event.error === 'network') {
+        errorMsg = 'Network error. Please check your internet connection.';
+      } else if (event.error === 'aborted') {
+        // User stopped - not an error
+        return;
       }
 
       setVoiceMessage(errorMsg);
       setTimeout(() => setVoiceMessage(null), 5000);
-    };
-
-    // Handle recognition end
-    recognition.onend = () => {
-      setIsListening(false);
       recognitionRef.current = null;
     };
 
     // Start recognition
     try {
       recognition.start();
+      console.log('🎤 Voice recognition started');
     } catch (error) {
       console.error('Failed to start recognition:', error);
       setIsListening(false);
@@ -620,10 +698,18 @@ export default function Dashboard() {
    */
   const stopListening = () => {
     if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        console.warn('Error stopping recognition:', e);
+      }
       recognitionRef.current = null;
     }
     setIsListening(false);
+    // Also cancel any ongoing speech
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
   };
 
   /**
